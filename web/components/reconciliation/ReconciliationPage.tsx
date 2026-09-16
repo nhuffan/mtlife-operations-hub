@@ -351,6 +351,9 @@ export default function ReconciliationPage() {
                                 client.address,
                                 client.tel,
                                 client.email,
+                                client.beneficiaryName,
+                                client.account,
+                                client.bankName,
                               ].join(" ")}
                               onSelect={() => {
                                 setSelectedClientId(client.id);
@@ -395,14 +398,24 @@ export default function ReconciliationPage() {
             </div>
 
             {selectedClient ? (
-              <dl className="mt-4 grid gap-3 border-t pt-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
-                <div>
+              <dl className="mt-4 grid gap-3 border-t pt-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div className="min-w-0">
                   <dt className="text-xs font-medium text-muted-foreground">To</dt>
-                  <dd className="mt-1 font-medium text-foreground">{selectedClient.name}</dd>
+                  <dd
+                    className="mt-1 truncate font-medium text-foreground"
+                    title={selectedClient.name}
+                  >
+                    {selectedClient.name}
+                  </dd>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <dt className="text-xs font-medium text-muted-foreground">Address</dt>
-                  <dd className="mt-1 text-foreground">{selectedClient.address}</dd>
+                  <dd
+                    className="mt-1 line-clamp-2 break-words text-foreground"
+                    title={selectedClient.address}
+                  >
+                    {selectedClient.address}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-muted-foreground">Tax code</dt>
@@ -410,11 +423,23 @@ export default function ReconciliationPage() {
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-muted-foreground">Tel</dt>
-                  <dd className="mt-1 text-foreground">{selectedClient.tel}</dd>
+                  <dd className="mt-1 text-foreground">{selectedClient.tel || "—"}</dd>
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-muted-foreground">Email</dt>
-                  <dd className="mt-1 break-all text-foreground">{selectedClient.email}</dd>
+                  <dd className="mt-1 break-all text-foreground">{selectedClient.email || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Beneficiary name</dt>
+                  <dd className="mt-1 text-foreground">{selectedClient.beneficiaryName || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Account</dt>
+                  <dd className="mt-1 text-foreground">{selectedClient.account || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Bank name</dt>
+                  <dd className="mt-1 text-foreground">{selectedClient.bankName || "—"}</dd>
                 </div>
               </dl>
             ) : (

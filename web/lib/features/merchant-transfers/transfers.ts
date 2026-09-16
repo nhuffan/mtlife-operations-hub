@@ -24,28 +24,6 @@ export const TRANSFER_STATUS_LABEL: Record<MerchantTransferStatus, string> = {
   transferred: "Transferred",
 };
 
-export const POPULAR_BANKS = [
-  "MB Bank",
-  "Vietcombank",
-  "BIDV Bank",
-  "Nam Á Bank",
-  "TPbank",
-  "Techcombank",
-  "VPBank",
-  "VietinBank",
-  "ACB",
-  "Sacombank",
-  "VietABank",
-  "HDBank",
-  "VIB",
-  "SHB",
-  "MSB",
-  "OCB",
-  "LPBank",
-  "Eximbank",
-  "Agribank",
-];
-
 export function formatTransferDate(value?: string | null) {
   if (!value) return "—";
 

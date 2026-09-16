@@ -346,6 +346,29 @@ function getRow(sheetDocument: XMLDocument, rowNumber: number) {
   );
 }
 
+function replaceBankSectionMerges(sheetDocument: XMLDocument, startRow: number) {
+  const mergeCells = sheetDocument.getElementsByTagNameNS(XML_NAMESPACE, "mergeCells")[0];
+  if (!mergeCells) throw new Error("The template is missing its merged-cell definitions.");
+
+  const bankRows = new Set(Array.from({ length: 7 }, (_, index) => startRow + index));
+  Array.from(mergeCells.children)
+    .filter((merge) => {
+      const reference = merge.getAttribute("ref") ?? "";
+      const row = Number(reference.match(/\d+/)?.[0] ?? 0);
+      return merge.localName === "mergeCell" && bankRows.has(row) && /^A\d+:B\d+$/.test(reference);
+    })
+    .forEach((merge) => merge.remove());
+
+  for (let row = startRow; row < startRow + 3; row++) {
+    [`A${row}:B${row}`, `C${row}:H${row}`].forEach((reference) => {
+      const merge = createXmlElement(sheetDocument, "mergeCell");
+      merge.setAttribute("ref", reference);
+      mergeCells.appendChild(merge);
+    });
+  }
+  mergeCells.setAttribute("count", String(mergeCells.children.length));
+}
+
 function removeTrailingTemplateColumn(sheetDocument: XMLDocument) {
   Array.from(sheetDocument.getElementsByTagNameNS(XML_NAMESPACE, "row")).forEach((row) => {
     Array.from(row.children)
@@ -514,18 +537,68 @@ function createWrapTextStyleFactory(stylesDocument: XMLDocument) {
   };
 }
 
-function setProductRowHeight(row: Element, productName: string) {
-  const lineCapacity = 13;
-  const lineCount = productName.split(/\r?\n/).reduce((total, line) => {
+function createBorderStyleFactory(stylesDocument: XMLDocument) {
+  const root = stylesDocument.documentElement;
+  const borders = directChild(root, "borders");
+  const cellXfs = directChild(root, "cellXfs");
+  if (!borders || !cellXfs) throw new Error("The template is missing border formatting.");
+
+  const borderCount = Array.from(borders.children).filter(
+    (child) => child.localName === "border"
+  ).length;
+  const styleByBaseAndBorder = new Map<string, number>();
+
+  return (cell: Element, borderId: number) => {
+    if (borderId < 0 || borderId >= borderCount) {
+      throw new Error(`The template is missing border style ${borderId}.`);
+    }
+
+    const baseStyle = Number(cell.getAttribute("s") ?? 0);
+    const cacheKey = `${baseStyle}:${borderId}`;
+    let styleIndex = styleByBaseAndBorder.get(cacheKey);
+    if (styleIndex === undefined) {
+      const styles = Array.from(cellXfs.children).filter((child) => child.localName === "xf");
+      const base = styles[baseStyle] ?? styles[0];
+      if (!base) throw new Error("The template is missing the base border style.");
+
+      const clone = base.cloneNode(true) as Element;
+      clone.setAttribute("borderId", String(borderId));
+      clone.setAttribute("applyBorder", "1");
+      cellXfs.appendChild(clone);
+      styleIndex = styles.length;
+      styleByBaseAndBorder.set(cacheKey, styleIndex);
+      cellXfs.setAttribute("count", String(styles.length + 1));
+    }
+    cell.setAttribute("s", String(styleIndex));
+  };
+}
+
+function estimateWrappedLineCount(value: string, lineCapacity: number) {
+  return value.split(/\r?\n/).reduce((total, line) => {
     const displayUnits = Array.from(line).reduce(
       (units, character) => units + (/[^\u0000-\u00ff]/.test(character) ? 2 : 1),
       0
     );
     return total + Math.max(1, Math.ceil(displayUnits / lineCapacity));
   }, 0);
-  const height = Math.min(120, Math.max(20, lineCount * 15 + 5));
-  row.setAttribute("ht", String(height));
+}
+
+function setWrappedRowHeight(
+  row: Element,
+  lineCount: number,
+  minimumHeight: number,
+  maximumHeight: number
+) {
+  const height = lineCount * 15 + 5;
+  row.setAttribute(
+    "ht",
+    String(Math.min(maximumHeight, Math.max(minimumHeight, height)))
+  );
   row.setAttribute("customHeight", "1");
+}
+
+function setProductRowHeight(row: Element, productName: string) {
+  setWrappedRowHeight(row, estimateWrappedLineCount(productName, 13), 20, 120);
 }
 
 function matchCellFont(
@@ -634,6 +707,7 @@ export async function createStatementOfAccount(
   setWorkbookFont(stylesDocument, "Times New Roman");
   const applyVndStyle = createVndStyleFactory(stylesDocument);
   const applyWrapTextStyle = createWrapTextStyleFactory(stylesDocument);
+  const applyBorderStyle = createBorderStyleFactory(stylesDocument);
 
   // The template's original money columns are too narrow for values such as
   // "1,480,000 ₫", which Excel renders as ##########.
@@ -685,7 +759,13 @@ export async function createStatementOfAccount(
   clientFields.forEach(([rowNumber, value]) => {
     setTextAt(`E${rowNumber}`, value);
     const row = getRow(sheetDocument, rowNumber);
-    if (row) alignCell(stylesDocument, ensureCell(sheetDocument, row, "E"), "left");
+    if (!row) return;
+    const cell = ensureCell(sheetDocument, row, "E");
+    alignCell(stylesDocument, cell, "left");
+    if (rowNumber === 6) {
+      applyWrapTextStyle(cell);
+      setWrappedRowHeight(row, estimateWrappedLineCount(value, 52), 20, 409);
+    }
   });
 
   const companyRow = getRow(sheetDocument, 5);
@@ -695,6 +775,64 @@ export async function createStatementOfAccount(
     matchCellFont(stylesDocument, toCell, fromCell);
     alignCell(stylesDocument, toCell, "left");
   }
+
+  const bankStartRow = 25 + extraRows;
+  replaceBankSectionMerges(sheetDocument, bankStartRow);
+  for (let rowNumber = bankStartRow; rowNumber < bankStartRow + 7; rowNumber++) {
+    const row = getRow(sheetDocument, rowNumber);
+    if (!row) throw new Error(`The template is missing bank detail row ${rowNumber}.`);
+    ["A", "B", "C", "D", "E", "F", "G", "H"].forEach((column) =>
+      clearCell(ensureCell(sheetDocument, row, column))
+    );
+    if (rowNumber >= bankStartRow + 3) {
+      row.setAttribute("hidden", "1");
+      row.setAttribute("ht", "0");
+      row.setAttribute("customHeight", "1");
+    } else {
+      row.removeAttribute("hidden");
+      row.setAttribute("ht", "24");
+      row.setAttribute("customHeight", "1");
+    }
+  }
+
+  const bankFields = [
+    ["开户名(Beneficiary Name)：", client.beneficiaryName],
+    ["开户银行账号(Beneficiary Account)：", client.account],
+    ["开户行(Beneficiary Bank Name)：", client.bankName],
+  ] as const;
+  bankFields.forEach(([label, value], index) => {
+    const rowNumber = bankStartRow + index;
+    setTextAt(`A${rowNumber}`, label);
+    setTextAt(`C${rowNumber}`, value);
+    const row = getRow(sheetDocument, rowNumber);
+    if (!row) return;
+    const labelCell = ensureCell(sheetDocument, row, "A");
+    const valueCell = ensureCell(sheetDocument, row, "C");
+    alignCell(stylesDocument, labelCell, "left");
+    alignCell(stylesDocument, valueCell, "left");
+    applyWrapTextStyle(labelCell);
+    applyWrapTextStyle(valueCell);
+    // Each bank row contains two merged cells: A:B and C:H. Apply the
+    // template's thin borders to every perimeter cell so Excel and print
+    // previews retain a complete outline around both merged regions.
+    applyBorderStyle(labelCell, 2);
+    applyBorderStyle(ensureCell(sheetDocument, row, "B"), 3);
+    applyBorderStyle(valueCell, 2);
+    ["D", "E", "F", "G"].forEach((column) =>
+      applyBorderStyle(ensureCell(sheetDocument, row, column), 10)
+    );
+    applyBorderStyle(ensureCell(sheetDocument, row, "H"), 3);
+    setWrappedRowHeight(
+      row,
+      Math.max(
+        estimateWrappedLineCount(label, 31),
+        estimateWrappedLineCount(value, 88)
+      ),
+      24,
+      409
+    );
+  });
+
   setTextAt("A10", `STATEMENT OF ACCOUNT FOR ${data.monthLabel} (DISBURSEMENT NOTE)`);
   setTextAt("A11", `${data.monthLabel} 月份对账单`);
   setTextAt(
@@ -747,6 +885,17 @@ export async function createStatementOfAccount(
     setNumber(sheetDocument, cell, value);
     applyVndStyle(cell);
   });
+
+  // Outline the complete total row. A:E is one merged label cell, while
+  // F, G, and H remain separate amount cells.
+  applyBorderStyle(ensureCell(sheetDocument, totalRow, "A"), 2);
+  ["B", "C", "D"].forEach((column) =>
+    applyBorderStyle(ensureCell(sheetDocument, totalRow, column), 10)
+  );
+  applyBorderStyle(ensureCell(sheetDocument, totalRow, "E"), 3);
+  ["F", "G", "H"].forEach((column) =>
+    applyBorderStyle(ensureCell(sheetDocument, totalRow, column), 1)
+  );
 
   const serializer = new XMLSerializer();
   zip.file("xl/worksheets/sheet1.xml", serializer.serializeToString(sheetDocument));

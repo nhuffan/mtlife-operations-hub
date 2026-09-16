@@ -7,6 +7,9 @@ export interface ReconciliationClient {
   taxCode: string;
   tel: string;
   email: string;
+  beneficiaryName: string;
+  account: string;
+  bankName: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -17,6 +20,9 @@ export interface ReconciliationClientInput {
   taxCode: string;
   tel: string;
   email: string;
+  beneficiaryName: string;
+  account: string;
+  bankName: string;
 }
 
 interface ReconciliationClientRow {
@@ -24,8 +30,11 @@ interface ReconciliationClientRow {
   name: string;
   address: string;
   tax_code: string;
-  tel: string;
-  email: string;
+  tel: string | null;
+  email: string | null;
+  beneficiary_name: string | null;
+  account: string | null;
+  bank_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -36,8 +45,11 @@ function mapClient(row: ReconciliationClientRow): ReconciliationClient {
     name: row.name,
     address: row.address,
     taxCode: row.tax_code,
-    tel: row.tel,
-    email: row.email,
+    tel: row.tel ?? "",
+    email: row.email ?? "",
+    beneficiaryName: row.beneficiary_name ?? "",
+    account: row.account ?? "",
+    bankName: row.bank_name ?? "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -50,13 +62,19 @@ function cleanInput(input: ReconciliationClientInput) {
     tax_code: input.taxCode.trim(),
     tel: input.tel.trim(),
     email: input.email.trim(),
+    beneficiary_name: input.beneficiaryName.trim(),
+    account: input.account.trim(),
+    bank_name: input.bankName.trim(),
   };
 }
+
+const CLIENT_COLUMNS =
+  "id, name, address, tax_code, tel, email, beneficiary_name, account, bank_name, created_at, updated_at";
 
 export async function listReconciliationClients() {
   const { data, error } = await supabase
     .from("reconciliation_clients")
-    .select("id, name, address, tax_code, tel, email, created_at, updated_at")
+    .select(CLIENT_COLUMNS)
     .order("name", { ascending: true });
 
   if (error) throw error;
@@ -67,7 +85,7 @@ export async function createReconciliationClient(input: ReconciliationClientInpu
   const { data, error } = await supabase
     .from("reconciliation_clients")
     .insert(cleanInput(input))
-    .select("id, name, address, tax_code, tel, email, created_at, updated_at")
+    .select(CLIENT_COLUMNS)
     .single();
 
   if (error) throw error;
@@ -82,7 +100,7 @@ export async function updateReconciliationClient(
     .from("reconciliation_clients")
     .update({ ...cleanInput(input), updated_at: new Date().toISOString() })
     .eq("id", id)
-    .select("id, name, address, tax_code, tel, email, created_at, updated_at")
+    .select(CLIENT_COLUMNS)
     .single();
 
   if (error) throw error;

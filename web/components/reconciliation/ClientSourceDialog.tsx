@@ -8,10 +8,11 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Check, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { TransferFormSection } from "@/components/merchant-transfers/TransferFormUI";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,10 @@ import {
   type ReconciliationClient,
   type ReconciliationClientInput,
 } from "@/lib/features/reconciliation/clients";
+import { useVietnamBanks } from "@/lib/features/banks/useVietnamBanks";
+
+const bankSelectClass =
+  "!h-10 h-10 w-full cursor-pointer appearance-none rounded-md border border-input bg-transparent px-3 py-2 pr-10 text-sm font-normal shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
 
 const EMPTY_FORM: ReconciliationClientInput = {
   name: "",
@@ -36,6 +41,9 @@ const EMPTY_FORM: ReconciliationClientInput = {
   taxCode: "",
   tel: "",
   email: "",
+  beneficiaryName: "",
+  account: "",
+  bankName: "",
 };
 
 function ClientFormField({
@@ -64,6 +72,13 @@ function ClientFormField({
   );
 }
 
+function getClientBankSummary(client: ReconciliationClient) {
+  return [client.beneficiaryName, client.account, client.bankName]
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join(" · ");
+}
+
 interface ClientSourceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -80,8 +95,11 @@ export default function ClientSourceDialog({
   mode,
 }: ClientSourceDialogProps) {
   const [form, setForm] = useState<ReconciliationClientInput>(EMPTY_FORM);
+  const banks = useVietnamBanks();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [bankSelection, setBankSelection] = useState("");
+  const [customBankName, setCustomBankName] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<ReconciliationClient | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -91,9 +109,16 @@ export default function ClientSourceDialog({
     const query = deferredSearchQuery.trim().toLocaleLowerCase("vi");
     if (!query) return clients;
     return clients.filter((client) =>
-      [client.name, client.address, client.taxCode, client.tel, client.email].some((value) =>
-        value.toLocaleLowerCase("vi").includes(query)
-      )
+      [
+        client.name,
+        client.address,
+        client.taxCode,
+        client.tel,
+        client.email,
+        client.beneficiaryName,
+        client.account,
+        client.bankName,
+      ].some((value) => value.toLocaleLowerCase("vi").includes(query))
     );
   }, [clients, deferredSearchQuery]);
 
@@ -107,7 +132,10 @@ export default function ClientSourceDialog({
       form.address.trim() !== client.address ||
       form.taxCode.trim() !== client.taxCode ||
       form.tel.trim() !== client.tel ||
-      form.email.trim() !== client.email
+      form.email.trim() !== client.email ||
+      form.beneficiaryName.trim() !== client.beneficiaryName ||
+      form.account.trim() !== client.account ||
+      form.bankName.trim() !== client.bankName
     );
   }, [clients, editingId, form]);
 
@@ -116,6 +144,8 @@ export default function ClientSourceDialog({
       setForm(EMPTY_FORM);
       setEditingId(null);
       setSearchQuery("");
+      setBankSelection("");
+      setCustomBankName("");
     }
   }, [open, mode]);
 
@@ -131,12 +161,17 @@ export default function ClientSourceDialog({
       taxCode: client.taxCode,
       tel: client.tel,
       email: client.email,
+      beneficiaryName: client.beneficiaryName,
+      account: client.account,
+      bankName: client.bankName,
     });
   }
 
   function resetForm() {
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setBankSelection("");
+    setCustomBankName("");
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -197,7 +232,7 @@ export default function ClientSourceDialog({
           showCloseButton={mode === "create"}
           className={
             mode === "directory"
-              ? "h-[430px] max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:w-[768px] sm:max-w-3xl"
+              ? "h-[520px] max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:w-[880px] sm:max-w-4xl"
               : "max-h-[92dvh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl"
           }
         >
@@ -224,80 +259,172 @@ export default function ClientSourceDialog({
               <form
                 id="reconciliation-client-form"
                 onSubmit={submit}
-                className="p-1 sm:p-0"
+                className="space-y-4 p-1 sm:p-0"
               >
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ClientFormField
-                    id="reconciliation-client-name"
-                    label="Client name"
-                    className="sm:col-span-2"
-                  >
-                    <Input
+                <TransferFormSection
+                  step={1}
+                  title="Client information"
+                  description="Enter the client's billing and contact details."
+                >
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <ClientFormField
                       id="reconciliation-client-name"
-                      className="h-10"
-                      value={form.name}
-                      onChange={(event) => updateField("name", event.target.value)}
-                      placeholder="Example: ABC Company"
-                      required
-                    />
-                  </ClientFormField>
-                  <ClientFormField
-                    id="reconciliation-client-address"
-                    label="Address"
-                    className="sm:col-span-2"
-                  >
-                    <Input
+                      label="Client name"
+                      className="sm:col-span-2"
+                    >
+                      <Input
+                        id="reconciliation-client-name"
+                        className="h-10"
+                        value={form.name}
+                        onChange={(event) => updateField("name", event.target.value)}
+                        placeholder="Example: ABC Company"
+                        required
+                      />
+                    </ClientFormField>
+                    <ClientFormField
                       id="reconciliation-client-address"
-                      className="h-10"
-                      value={form.address}
-                      onChange={(event) => updateField("address", event.target.value)}
-                      placeholder="Example: 123 Nguyen Hue Street, Ho Chi Minh City"
-                      required
-                    />
-                  </ClientFormField>
-                  <ClientFormField id="reconciliation-client-tax-code" label="Tax code">
-                    <Input
-                      id="reconciliation-client-tax-code"
-                      className="h-10"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={form.taxCode}
-                      onChange={(event) =>
-                        updateField("taxCode", event.target.value.replace(/\D/g, ""))
-                      }
-                      placeholder="Example: 0312345678"
-                      required
-                    />
-                  </ClientFormField>
-                  <ClientFormField id="reconciliation-client-tel" label="Tel" optional>
-                    <Input
-                      id="reconciliation-client-tel"
-                      className="h-10"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={form.tel}
-                      onChange={(event) =>
-                        updateField("tel", event.target.value.replace(/\D/g, ""))
-                      }
-                      placeholder="Example: 0901234567"
-                    />
-                  </ClientFormField>
-                  <ClientFormField
-                    id="reconciliation-client-email"
-                    label="Email"
-                    optional
-                    className="sm:col-span-2"
-                  >
-                    <Input
+                      label="Address"
+                    >
+                      <Input
+                        id="reconciliation-client-address"
+                        className="h-10"
+                        value={form.address}
+                        onChange={(event) => updateField("address", event.target.value)}
+                        placeholder="Example: 123 Nguyen Hue Street, Ho Chi Minh City"
+                        required
+                      />
+                    </ClientFormField>
+                    <ClientFormField id="reconciliation-client-tax-code" label="Tax code">
+                      <Input
+                        id="reconciliation-client-tax-code"
+                        className="h-10"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={form.taxCode}
+                        onChange={(event) =>
+                          updateField("taxCode", event.target.value.replace(/\D/g, ""))
+                        }
+                        placeholder="Example: 0312345678"
+                        required
+                      />
+                    </ClientFormField>
+                    <ClientFormField id="reconciliation-client-tel" label="Tel" optional>
+                      <Input
+                        id="reconciliation-client-tel"
+                        className="h-10"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={form.tel}
+                        onChange={(event) =>
+                          updateField("tel", event.target.value.replace(/\D/g, ""))
+                        }
+                        placeholder="Example: 0901234567"
+                      />
+                    </ClientFormField>
+                    <ClientFormField
                       id="reconciliation-client-email"
-                      type="email"
-                      className="h-10"
-                      value={form.email}
-                      onChange={(event) => updateField("email", event.target.value)}
-                      placeholder="Example: billing@company.com"
-                    />
-                  </ClientFormField>
-                </div>
+                      label="Email"
+                      optional
+                    >
+                      <Input
+                        id="reconciliation-client-email"
+                        type="email"
+                        className="h-10"
+                        value={form.email}
+                        onChange={(event) => updateField("email", event.target.value)}
+                        placeholder="Example: billing@company.com"
+                      />
+                    </ClientFormField>
+                  </div>
+                </TransferFormSection>
+
+                <TransferFormSection
+                  step={2}
+                  title="Bank information"
+                  description="Add bank details when available."
+                >
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <ClientFormField
+                      id="reconciliation-client-beneficiary-name"
+                      label="Beneficiary name"
+                      optional
+                      className="sm:col-span-2"
+                    >
+                      <Input
+                        id="reconciliation-client-beneficiary-name"
+                        className="h-10"
+                        value={form.beneficiaryName}
+                        onChange={(event) => updateField("beneficiaryName", event.target.value)}
+                        placeholder="Example: NGUYEN VAN A"
+                      />
+                    </ClientFormField>
+                    <ClientFormField
+                      id="reconciliation-client-bank-name"
+                      label="Bank name"
+                      optional
+                    >
+                      <div className="relative">
+                        <select
+                          id="reconciliation-client-bank-name"
+                          value={bankSelection}
+                          onChange={(event) => {
+                            const nextBank = event.target.value;
+                            setBankSelection(nextBank);
+                            if (nextBank === "__other__") {
+                              updateField("bankName", customBankName);
+                            } else {
+                              setCustomBankName("");
+                              updateField("bankName", nextBank);
+                            }
+                          }}
+                          className={bankSelectClass}
+                        >
+                          <option value="">No bank selected</option>
+                          {bankSelection &&
+                          bankSelection !== "__other__" &&
+                          !banks.includes(bankSelection) ? (
+                            <option value={bankSelection}>{bankSelection}</option>
+                          ) : null}
+                          {banks.map((bank) => (
+                            <option key={bank} value={bank}>
+                              {bank}
+                            </option>
+                          ))}
+                          <option value="__other__">Other bank...</option>
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-70" />
+                      </div>
+                      {bankSelection === "__other__" ? (
+                        <Input
+                          value={customBankName}
+                          onChange={(event) => {
+                            setCustomBankName(event.target.value);
+                            updateField("bankName", event.target.value);
+                          }}
+                          placeholder="Enter bank name..."
+                          className="mt-2 h-10"
+                        />
+                      ) : null}
+                    </ClientFormField>
+                    <ClientFormField
+                      id="reconciliation-client-account"
+                      label="Account number"
+                      optional
+                    >
+                      <Input
+                        id="reconciliation-client-account"
+                        className="h-10"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={form.account}
+                        onChange={(event) =>
+                          updateField("account", event.target.value.replace(/\D/g, ""))
+                        }
+                        placeholder="Example: 63318886886"
+                      />
+                    </ClientFormField>
+                  </div>
+                </TransferFormSection>
               </form>
             ) : null}
 
@@ -313,7 +440,7 @@ export default function ClientSourceDialog({
                         setSearchQuery(event.target.value);
                         if (editingId) resetForm();
                       }}
-                      placeholder="Search name, tax code, phone, email..."
+                      placeholder="Search client or bank details..."
                       className="h-10 pl-9"
                     />
                   </div>
@@ -332,7 +459,7 @@ export default function ClientSourceDialog({
                           key={client.id}
                           id={`edit-client-${client.id}`}
                           onSubmit={submit}
-                          className="flex h-[86px] items-center gap-2 border-b bg-muted/30 p-2"
+                          className="flex h-[118px] items-center gap-2 border-b bg-muted/30 p-2"
                         >
                           <div className="min-w-0 flex-1 space-y-1.5">
                             <div className="flex min-w-0 gap-2">
@@ -391,6 +518,36 @@ export default function ClientSourceDialog({
                                 placeholder="Email"
                               />
                             </div>
+                            <div className="grid min-w-0 grid-cols-3 gap-2">
+                              <Input
+                                id="edit-client-beneficiary-name"
+                                aria-label="Beneficiary name"
+                                className="h-8 min-w-0"
+                                value={form.beneficiaryName}
+                                onChange={(event) => updateField("beneficiaryName", event.target.value)}
+                                placeholder="Beneficiary name"
+                              />
+                              <Input
+                                id="edit-client-account"
+                                aria-label="Account"
+                                className="h-8 min-w-0"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={form.account}
+                                onChange={(event) =>
+                                  updateField("account", event.target.value.replace(/\D/g, ""))
+                                }
+                                placeholder="Account"
+                              />
+                              <Input
+                                id="edit-client-bank-name"
+                                aria-label="Bank name"
+                                className="h-8 min-w-0"
+                                value={form.bankName}
+                                onChange={(event) => updateField("bankName", event.target.value)}
+                                placeholder="Bank name"
+                              />
+                            </div>
                           </div>
                           <div className="flex shrink-0 items-center gap-1">
                             <Button
@@ -418,12 +575,17 @@ export default function ClientSourceDialog({
                       ) : (
                         <div
                           key={client.id}
-                          className="flex h-[86px] items-start gap-3 border-b p-3 transition-colors hover:bg-muted/50"
+                          className="flex items-center gap-3 border-b p-3 transition-colors hover:bg-muted/50"
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="font-medium text-foreground">{client.name}</p>
-                              <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <p
+                                className="min-w-0 flex-1 truncate font-medium text-foreground"
+                                title={client.name}
+                              >
+                                {client.name}
+                              </p>
+                              <span className="shrink-0 whitespace-nowrap rounded-md bg-muted px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
                                 Tax ID: {client.taxCode}
                               </span>
                             </div>
@@ -432,6 +594,11 @@ export default function ClientSourceDialog({
                                 .filter(Boolean)
                                 .join(" · ")}
                             </p>
+                            {getClientBankSummary(client) ? (
+                              <p className="mt-1 truncate text-xs text-muted-foreground">
+                                {getClientBankSummary(client)}
+                              </p>
+                            ) : null}
                           </div>
                           <div className="flex shrink-0 items-center justify-center gap-1">
                             <Button

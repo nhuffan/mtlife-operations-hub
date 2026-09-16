@@ -33,9 +33,10 @@ import {
 import {
   formatMoneyInput,
   parseMoneyInput,
-  POPULAR_BANKS,
   TRANSFER_STATUS_LABEL,
 } from "@/lib/features/merchant-transfers/transfers";
+import { useVietnamBanks } from "@/lib/features/banks/useVietnamBanks";
+import { FALLBACK_BANKS } from "@/lib/features/banks/banks";
 import type {
   MerchantTransferFormValues,
   MerchantTransferRow,
@@ -156,6 +157,7 @@ export default function TransferDialog({
 }) {
   const isEditMode = !!transfer;
   const skipNextMerchantChangeRef = useRef(false);
+  const banks = useVietnamBanks();
 
   const [sequenceNo, setSequenceNo] = useState(nextSequenceNo);
   const [merchant, setMerchant] = useState("");
@@ -209,10 +211,10 @@ export default function TransferDialog({
       setAccountHolder(transfer.account_holder ?? "");
       const savedBankName = transfer.bank_name?.trim() ?? "";
       setBankName(
-        !savedBankName ? "" : POPULAR_BANKS.includes(savedBankName) ? savedBankName : "__other__"
+        !savedBankName ? "" : FALLBACK_BANKS.includes(savedBankName) ? savedBankName : "__other__"
       );
       setCustomBankName(
-        savedBankName && !POPULAR_BANKS.includes(savedBankName) ? savedBankName : ""
+        savedBankName && !FALLBACK_BANKS.includes(savedBankName) ? savedBankName : ""
       );
       setBranch(transfer.branch ?? "");
       setStatus(transfer.status);
@@ -238,13 +240,20 @@ export default function TransferDialog({
     setSaving(false);
   }, [open, transfer, nextSequenceNo]);
 
+  useEffect(() => {
+    if (bankName === "__other__" && customBankName && banks.includes(customBankName)) {
+      setBankName(customBankName);
+      setCustomBankName("");
+    }
+  }, [bankName, banks, customBankName]);
+
   function applyMerchantLookup(row: MerchantTransferRow) {
     skipNextMerchantChangeRef.current = true;
     setMerchant(row.merchant);
     setAccountNumber(row.account_number);
     setAccountHolder(row.account_holder);
-    setBankName(POPULAR_BANKS.includes(row.bank_name) ? row.bank_name : "__other__");
-    setCustomBankName(POPULAR_BANKS.includes(row.bank_name) ? "" : row.bank_name);
+    setBankName(banks.includes(row.bank_name) ? row.bank_name : "__other__");
+    setCustomBankName(banks.includes(row.bank_name) ? "" : row.bank_name);
     setBranch(row.branch ?? "");
     setAutoFillNotice(`Bank details were filled from the previous entry for ${row.merchant}.`);
     setShowMerchantSuggestions(false);
@@ -488,7 +497,10 @@ export default function TransferDialog({
                     className={selectClass}
                   >
                     <option value="">No bank selected</option>
-                    {POPULAR_BANKS.map((bank) => (
+                    {bankName && bankName !== "__other__" && !banks.includes(bankName) ? (
+                      <option value={bankName}>{bankName}</option>
+                    ) : null}
+                    {banks.map((bank) => (
                       <option key={bank} value={bank}>
                         {bank}
                       </option>
