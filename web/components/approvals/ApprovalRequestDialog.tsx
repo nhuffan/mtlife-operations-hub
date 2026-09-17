@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { extractDigits } from "@/lib/shared/number";
 import { AttachmentIcon, isImageFile } from "@/components/qa/utils/AttachmentIcon";
 import {
   attachmentCardClass,
@@ -94,13 +95,13 @@ function getAttachmentKey(item: {
 }
 
 function formatNumberInput(value: string) {
-  const digits = value.replace(/[^\d]/g, "");
+  const digits = extractDigits(value);
   if (!digits) return "";
   return Number(digits).toLocaleString("en-US");
 }
 
 function parseFormattedNumber(value: string) {
-  const digits = value.replace(/[^\d]/g, "");
+  const digits = extractDigits(value);
   return digits ? Number(digits) : null;
 }
 
@@ -193,8 +194,8 @@ export default function CreateApprovalRequestDialog({
     const originalBonusAmount =
       request.bonus_amount != null ? String(request.bonus_amount) : "";
 
-    const normalizedCurrentKpi = kpiAwarded.replace(/[^\d]/g, "");
-    const normalizedCurrentBonus = bonusAmount.replace(/[^\d]/g, "");
+    const normalizedCurrentKpi = extractDigits(kpiAwarded);
+    const normalizedCurrentBonus = extractDigits(bonusAmount);
 
     const infoChanged =
       storeName.trim() !== originalStoreName ||

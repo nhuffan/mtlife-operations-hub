@@ -21,6 +21,7 @@ import {
 import { DatePickerDMY } from "@/components/ui/date-picker-dmy";
 import { useMastersActive } from "@/lib/features/masters/useMasters";
 import { supabase } from "@/lib/integrations/supabase/client";
+import { extractDigits } from "@/lib/shared/number";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -32,13 +33,13 @@ import {
 
 function formatNumberInput(value: string) {
   if (!value) return "";
-  const digitsOnly = value.replace(/[^\d]/g, "");
+  const digitsOnly = extractDigits(value);
   if (!digitsOnly) return "";
   return Number(digitsOnly).toLocaleString("en-US");
 }
 
 function parseNumberInput(value: string): number | null {
-  const digitsOnly = value.replace(/[^\d]/g, "");
+  const digitsOnly = extractDigits(value);
   if (!digitsOnly) return null;
   return Number(digitsOnly);
 }

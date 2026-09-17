@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { DatePickerDMY } from "@/components/ui/date-picker-dmy";
 import { useMasters, useMastersActive } from "@/lib/features/masters/useMasters";
+import { extractDigits } from "@/lib/shared/number";
 
 import { db } from "@/lib/features/performance/offlineDb";
 import { syncPending } from "@/lib/features/performance/syncPending";
@@ -36,13 +37,13 @@ import {
 
 function formatNumberInput(value: string) {
   if (!value) return "";
-  const digitsOnly = value.replace(/[^\d]/g, "");
+  const digitsOnly = extractDigits(value);
   if (!digitsOnly) return "";
   return Number(digitsOnly).toLocaleString("en-US");
 }
 
 function parseNumberInput(value: string): number | null {
-  const digitsOnly = value.replace(/[^\d]/g, "");
+  const digitsOnly = extractDigits(value);
   if (!digitsOnly) return null;
   return Number(digitsOnly);
 }

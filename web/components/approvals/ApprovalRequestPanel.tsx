@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { extractDigits } from "@/lib/shared/number";
 import type { ApprovalRequest, ApprovalImage, ApprovalRequestVM } from "./utils/types";
 import { AttachmentIcon, isImageFile } from "@/components/qa/utils/AttachmentIcon";
 import {
@@ -95,13 +96,13 @@ function getAttachmentOpenUrl(item: ApprovalImage) {
 }
 
 function formatNumberInput(value: string) {
-    const digits = value.replace(/[^\d]/g, "");
+    const digits = extractDigits(value);
     if (!digits) return "";
     return Number(digits).toLocaleString("en-US");
 }
 
 function parseFormattedNumber(value: string) {
-    const digits = value.replace(/[^\d]/g, "");
+    const digits = extractDigits(value);
     return digits ? Number(digits) : 0;
 }
 

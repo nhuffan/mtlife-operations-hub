@@ -30,6 +30,7 @@ import {
 import { MASTER_CATEGORY_UI } from "@/lib/features/masters/masterUi";
 import { supabase } from "@/lib/integrations/supabase/client";
 import { invalidateMastersCache } from "@/lib/features/masters/useMasters";
+import { extractDigits } from "@/lib/shared/number";
 import { db } from "@/lib/features/performance/offlineDb";
 import { syncPending } from "@/lib/features/performance/syncPending";
 import { fetchBdMonthlyLevels, getBdLevelsForMonth } from "@/lib/features/performance/bdMonthlyLevels";
@@ -661,7 +662,7 @@ export default function MasterManager({
     if (category !== "bd_level" || selectedMonth === ALL_TIME) return;
 
     const rawValue = kpiInputs[bdLevelId] ?? "";
-    const digits = rawValue.replace(/[^\d]/g, "");
+    const digits = extractDigits(rawValue);
     const kpiValue = digits ? Number(digits) : 0;
 
     setSavingKpiId(bdLevelId);
@@ -984,7 +985,7 @@ export default function MasterManager({
                             className="mx-auto h-8 max-w-[140px] text-center"
                             disabled={savingKpiId === it.id}
                             onChange={(e) => {
-                              const digits = e.target.value.replace(/[^\d]/g, "");
+                              const digits = extractDigits(e.target.value);
                               setKpiInputs((prev) => ({
                                 ...prev,
                                 [it.id]: digits

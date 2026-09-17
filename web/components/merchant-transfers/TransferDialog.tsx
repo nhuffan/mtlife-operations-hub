@@ -37,6 +37,7 @@ import {
 } from "@/lib/features/merchant-transfers/transfers";
 import { useVietnamBanks } from "@/lib/features/banks/useVietnamBanks";
 import { FALLBACK_BANKS } from "@/lib/features/banks/banks";
+import { extractDigits } from "@/lib/shared/number";
 import type {
   MerchantTransferFormValues,
   MerchantTransferRow,
@@ -207,7 +208,7 @@ export default function TransferDialog({
       setSequenceNo(transfer.sequence_no);
       setMerchant(transfer.merchant ?? "");
       setAmount(transfer.amount ? formatMoneyInput(transfer.amount) : "");
-      setAccountNumber(transfer.account_number ?? "");
+      setAccountNumber(extractDigits(transfer.account_number));
       setAccountHolder(transfer.account_holder ?? "");
       const savedBankName = transfer.bank_name?.trim() ?? "";
       setBankName(
@@ -250,7 +251,7 @@ export default function TransferDialog({
   function applyMerchantLookup(row: MerchantTransferRow) {
     skipNextMerchantChangeRef.current = true;
     setMerchant(row.merchant);
-    setAccountNumber(row.account_number);
+    setAccountNumber(extractDigits(row.account_number));
     setAccountHolder(row.account_holder);
     setBankName(banks.includes(row.bank_name) ? row.bank_name : "__other__");
     setCustomBankName(banks.includes(row.bank_name) ? "" : row.bank_name);
@@ -471,8 +472,10 @@ export default function TransferDialog({
               <TransferFormField id="transfer-account-number" label="Account number" optional>
                 <Input
                   id="transfer-account-number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={accountNumber}
-                  onChange={(event) => setAccountNumber(event.target.value)}
+                  onChange={(event) => setAccountNumber(extractDigits(event.target.value))}
                   placeholder="Enter account number..."
                   className={fieldClass}
                 />

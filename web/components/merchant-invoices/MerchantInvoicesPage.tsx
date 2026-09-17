@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "@/lib/integrations/supabase/client";
 import { deleteCloudinaryAssets } from "@/lib/integrations/cloudinary/delete-assets";
+import { extractDigits } from "@/lib/shared/number";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -128,12 +129,12 @@ function getCsvValue(cols: string[], index: number) {
 }
 
 function parseCsvAmount(value: string) {
-  const digits = value.replace(/\D/g, "");
+  const digits = extractDigits(value);
   return digits ? Number(digits) : 0;
 }
 
 function parseCsvVatRate(value: string) {
-  const digits = value.replace(/\D/g, "");
+  const digits = extractDigits(value);
   return digits ? Number(digits) : 10;
 }
 

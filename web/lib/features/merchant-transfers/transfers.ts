@@ -1,3 +1,5 @@
+import { extractDigits } from "@/lib/shared/number";
+
 export type MerchantTransferStatus = "not_transferred" | "ready" | "transferred";
 
 export type MerchantTransferRow = {
@@ -52,12 +54,12 @@ export function formatMonthLabel(monthKey: string) {
 }
 
 export function parseMoneyInput(value: string) {
-  const digits = value.replace(/\D/g, "");
+  const digits = extractDigits(value);
   return digits ? Number(digits) : 0;
 }
 
 export function formatMoneyInput(value: string | number) {
-  const digits = String(value).replace(/\D/g, "");
+  const digits = extractDigits(value);
   if (!digits) return "";
   return new Intl.NumberFormat("vi-VN").format(Number(digits));
 }

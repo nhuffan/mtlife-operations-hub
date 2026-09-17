@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { extractDigits } from "@/lib/shared/number";
 import AttachmentLoadingIndicator from "@/components/qa/utils/AttachmentLoadingIndicator";
 import {
   compressImageFiles,
@@ -94,13 +95,13 @@ function getImageUrl(item?: LocalProofImage | null) {
 }
 
 function formatAmountInput(value: string | number) {
-  const digits = String(value).replace(/\D/g, "");
+  const digits = extractDigits(value);
   if (!digits) return "";
   return new Intl.NumberFormat("vi-VN").format(Number(digits));
 }
 
 function normalizeAmountInput(value: string) {
-  return value.replace(/\D/g, "");
+  return extractDigits(value);
 }
 
 export default function InvoiceDialog({

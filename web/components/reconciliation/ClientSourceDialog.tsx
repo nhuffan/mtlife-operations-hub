@@ -31,6 +31,7 @@ import {
   type ReconciliationClientInput,
 } from "@/lib/features/reconciliation/clients";
 import { useVietnamBanks } from "@/lib/features/banks/useVietnamBanks";
+import { extractDigits } from "@/lib/shared/number";
 
 const bankSelectClass =
   "!h-10 h-10 w-full cursor-pointer appearance-none rounded-md border border-input bg-transparent px-3 py-2 pr-10 text-sm font-normal shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
@@ -104,6 +105,9 @@ export default function ClientSourceDialog({
   const [deleting, setDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const hasRequiredFields = [form.name, form.address, form.taxCode].every(
+    (value) => Boolean(value.trim())
+  );
 
   const filteredClients = useMemo(() => {
     const query = deferredSearchQuery.trim().toLocaleLowerCase("vi");
@@ -176,7 +180,7 @@ export default function ClientSourceDialog({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if ([form.name, form.address, form.taxCode].some((value) => !value.trim())) {
+    if (!hasRequiredFields) {
       toast.error("Enter the client name, address, and tax code.");
       return;
     }
@@ -302,7 +306,7 @@ export default function ClientSourceDialog({
                         pattern="[0-9]*"
                         value={form.taxCode}
                         onChange={(event) =>
-                          updateField("taxCode", event.target.value.replace(/\D/g, ""))
+                          updateField("taxCode", extractDigits(event.target.value))
                         }
                         placeholder="Example: 0312345678"
                         required
@@ -316,7 +320,7 @@ export default function ClientSourceDialog({
                         pattern="[0-9]*"
                         value={form.tel}
                         onChange={(event) =>
-                          updateField("tel", event.target.value.replace(/\D/g, ""))
+                          updateField("tel", extractDigits(event.target.value))
                         }
                         placeholder="Example: 0901234567"
                       />
@@ -418,7 +422,7 @@ export default function ClientSourceDialog({
                         pattern="[0-9]*"
                         value={form.account}
                         onChange={(event) =>
-                          updateField("account", event.target.value.replace(/\D/g, ""))
+                          updateField("account", extractDigits(event.target.value))
                         }
                         placeholder="Example: 63318886886"
                       />
@@ -480,7 +484,7 @@ export default function ClientSourceDialog({
                                 pattern="[0-9]*"
                                 value={form.taxCode}
                                 onChange={(event) =>
-                                  updateField("taxCode", event.target.value.replace(/\D/g, ""))
+                                  updateField("taxCode", extractDigits(event.target.value))
                                 }
                                 placeholder="Tax code"
                                 required
@@ -504,7 +508,7 @@ export default function ClientSourceDialog({
                                 pattern="[0-9]*"
                                 value={form.tel}
                                 onChange={(event) =>
-                                  updateField("tel", event.target.value.replace(/\D/g, ""))
+                                  updateField("tel", extractDigits(event.target.value))
                                 }
                                 placeholder="Phone number"
                               />
@@ -535,7 +539,7 @@ export default function ClientSourceDialog({
                                 pattern="[0-9]*"
                                 value={form.account}
                                 onChange={(event) =>
-                                  updateField("account", event.target.value.replace(/\D/g, ""))
+                                  updateField("account", extractDigits(event.target.value))
                                 }
                                 placeholder="Account"
                               />
@@ -565,7 +569,7 @@ export default function ClientSourceDialog({
                               type="submit"
                               size="icon-sm"
                               className="cursor-pointer disabled:cursor-not-allowed"
-                              disabled={saving || !hasEditChanges}
+                              disabled={saving || !hasRequiredFields || !hasEditChanges}
                             >
                               {saving ? <Loader2 className="animate-spin" /> : <Check />}
                               <span className="sr-only">Save changes</span>
@@ -644,8 +648,8 @@ export default function ClientSourceDialog({
               <Button
                 type="submit"
                 form="reconciliation-client-form"
-                className="h-10 cursor-pointer rounded-lg px-6 sm:min-w-36"
-                disabled={saving}
+                className="h-10 cursor-pointer rounded-lg px-6 disabled:cursor-not-allowed sm:min-w-36"
+                disabled={saving || !hasRequiredFields}
               >
                 {saving ? <Loader2 className="animate-spin" /> : <Plus />}
                 {saving ? "Saving..." : "Add to source"}
