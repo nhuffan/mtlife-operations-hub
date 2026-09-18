@@ -28,6 +28,7 @@ export const ZH_TRANSLATIONS: Record<string, string> = {
   Language: "语言",
   Settings: "设置",
   Appearance: "外观",
+  Theme: "主题",
   Light: "浅色",
   Dark: "深色",
   "Team Performance": "团队业绩",

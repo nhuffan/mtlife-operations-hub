@@ -28,6 +28,7 @@ export const VI_TRANSLATIONS: Record<string, string> = {
   "Language": "Ngôn ngữ",
   "Settings": "Cài đặt",
   "Appearance": "Giao diện",
+  "Theme": "Giao diện",
   "Light": "Sáng",
   "Dark": "Tối",
   "Team Performance": "Hiệu suất đội ngũ",
