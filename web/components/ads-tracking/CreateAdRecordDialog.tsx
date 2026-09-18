@@ -1,4 +1,5 @@
 "use client";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -80,6 +81,7 @@ export default function CreateAdRecordDialog({
 }) {
     const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
     const [pointTypes, setPointTypes] = useState<PointTypeMaster[]>([]);
+    const { t } = useI18n();
     const [selectedCustomerName, setSelectedCustomerName] = useState("");
     const [selectedPointTypeId, setSelectedPointTypeId] = useState("");
     const [customerQuery, setCustomerQuery] = useState("");
@@ -541,7 +543,7 @@ export default function CreateAdRecordDialog({
                         onClick={() => handleDialogOpenChange(false)}
                         disabled={saving}
                     >
-                        Cancel
+                        {t("Cancel")}
                     </Button>
 
                     <Button
@@ -553,10 +555,10 @@ export default function CreateAdRecordDialog({
                         {saving ? (
                             <>
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Creating...
+                                {t("Creating...")}
                             </>
                         ) : (
-                            "Create Record"
+                            t("Create Record")
                         )}
                     </Button>
                 </DialogFooter>

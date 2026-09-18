@@ -1,4 +1,5 @@
 "use client";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -157,6 +158,7 @@ export default function TransferDialog({
   nextSequenceNo: number;
 }) {
   const isEditMode = !!transfer;
+  const { t } = useI18n();
   const skipNextMerchantChangeRef = useRef(false);
   const banks = useVietnamBanks();
 
@@ -610,7 +612,7 @@ export default function TransferDialog({
             disabled={saving}
             className="cursor-pointer sm:min-w-24"
           >
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             onClick={saveTransfer}
@@ -618,7 +620,7 @@ export default function TransferDialog({
             className="cursor-pointer sm:min-w-32"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            {isEditMode ? "Update" : "Save Transfer"}
+            {t(isEditMode ? "Update" : "Save Transfer")}
           </Button>
         </DialogFooter>
       </DialogContent>

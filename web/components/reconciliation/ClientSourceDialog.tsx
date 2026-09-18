@@ -1,4 +1,5 @@
 "use client";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 import {
   type FormEvent,
@@ -95,6 +96,7 @@ export default function ClientSourceDialog({
   onChanged,
   mode,
 }: ClientSourceDialogProps) {
+  const { t } = useI18n();
   const [form, setForm] = useState<ReconciliationClientInput>(EMPTY_FORM);
   const banks = useVietnamBanks();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -435,7 +437,7 @@ export default function ClientSourceDialog({
             {mode === "directory" ? (
               <section className="flex h-full min-h-0 flex-col">
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <h3 className="font-semibold">Clients ({clients.length})</h3>
+                  <h3 className="font-semibold">{t("Clients")} ({clients.length})</h3>
                   <div className="relative sm:w-80">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -674,7 +676,7 @@ export default function ClientSourceDialog({
           if (!nextOpen && !deleting) setDeleteTarget(null);
         }}
         title="Delete client?"
-        description={`${deleteTarget?.name ?? "This client"} will be removed from the shared source.`}
+        description={t("{{name}} will be removed from the shared source.", { name: deleteTarget?.name ?? t("This client") })}
         onConfirm={() => void confirmDelete()}
         loading={deleting}
       />

@@ -1,4 +1,5 @@
 "use client";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -72,6 +73,7 @@ function EditAdRecordDialogBody({
     onSaved: () => void | Promise<void>;
 }) {
     const [startDate, setStartDate] = useState(record.start_date ?? "");
+    const { t } = useI18n();
     const [endDate, setEndDate] = useState(record.end_date ?? "");
     const [branchName, setBranchName] = useState(record.branch_name ?? "");
     const [note, setNote] = useState(record.note ?? "");
@@ -313,7 +315,7 @@ function EditAdRecordDialogBody({
                             onClick={() => onOpenChange(false)}
                             disabled={saving}
                         >
-                            Cancel
+                            {t("Cancel")}
                         </Button>
 
                         <Button
@@ -322,7 +324,7 @@ function EditAdRecordDialogBody({
                             onClick={handleSave}
                             disabled={isDisabled}
                         >
-                            {saving ? "Saving..." : "Save Changes"}
+                            {t(saving ? "Saving..." : "Save Changes")}
                         </Button>
                     </div>
                 </DialogFooter>

@@ -87,3 +87,20 @@ Do not add Supabase attachment tables or Supabase Storage flows unless the produ
 - Do not force-mount every tab or trigger every module query on startup.
 - Run `cd web && npm run lint` after code changes.
 - Run `cd web && npm run build` for larger UI/schema changes.
+
+## Localization Rules
+
+- Every new or changed user-facing text must be localized in the same task for all supported languages: English (`en`), Vietnamese (`vi`), and Simplified Chinese (`zh-CN`).
+- This includes buttons, dialog titles and descriptions, labels, placeholders, tooltips, accessibility labels, validation and error messages, toasts, empty states, and loading states.
+- Use the existing i18n translation function and update both `web/lib/i18n/translations.ts` and `web/lib/i18n/zhTranslations.ts`. Reuse existing keys where appropriate; do not rely on hard-coded text or automatic DOM translation for new UI.
+- Use translation placeholders for dynamic values such as counts, names, dates, and statuses. Do not concatenate untranslated words into user-facing sentences.
+- Preserve user-entered content and identifiers as data; translate the surrounding UI text rather than changing those values.
+- Before completing the task, verify that new and changed strings have translations in all supported languages, including conditional button labels and loading/error states.
+
+## Development Server Rules
+
+- Never start a development server (`npm run dev`, `next dev`, or an equivalent command) without asking the user for permission first, even when starting it would help with testing.
+- Permission to start a server applies only to the current task and must not be assumed for later tasks.
+- When the check that required the server is complete, stop the server automatically before finishing the task.
+- Never leave a development server or related process running in the background after handing the task back to the user.
+- After stopping a server, verify that its port is no longer listening.

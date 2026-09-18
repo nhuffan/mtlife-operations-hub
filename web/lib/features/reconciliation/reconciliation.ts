@@ -264,7 +264,7 @@ function directChild(parent: Element, localName: string) {
   return Array.from(parent.children).find((child) => child.localName === localName) ?? null;
 }
 
-function setWorkbookFont(stylesDocument: XMLDocument, fontName: string) {
+function setWorkbookFont(stylesDocument: XMLDocument, fontName: string, fontSize: number) {
   const fonts = directChild(stylesDocument.documentElement, "fonts");
   if (!fonts) throw new Error("The template is missing its font definitions.");
 
@@ -277,6 +277,12 @@ function setWorkbookFont(stylesDocument: XMLDocument, fontName: string) {
         font.insertBefore(name, font.firstChild);
       }
       name.setAttribute("val", fontName);
+      let size = directChild(font, "sz");
+      if (!size) {
+        size = createXmlElement(stylesDocument, "sz");
+        font.appendChild(size);
+      }
+      size.setAttribute("val", String(fontSize));
       directChild(font, "scheme")?.remove();
     });
 }
@@ -704,7 +710,28 @@ export async function createStatementOfAccount(
   shiftTemplateRows(sheetDocument, extraRows);
   extendDataRows(sheetDocument, extraRows);
   updateDefinedRange(workbookDocument, totalRowNumber);
-  setWorkbookFont(stylesDocument, "Times New Roman");
+  setWorkbookFont(stylesDocument, "Times New Roman", 11);
+  // Rich-text runs override the cell font, so normalize those as well.
+  const normalizeRichText = (document: XMLDocument) => {
+    Array.from(document.getElementsByTagNameNS("*", "rPr")).forEach((properties) => {
+      for (const [tag, value] of [["sz", "11"], ["rFont", "Times New Roman"]]) {
+        let element = directChild(properties, tag);
+        if (!element) {
+          element = createXmlElement(document, tag);
+          properties.appendChild(element);
+        }
+        element.setAttribute("val", value);
+      }
+      directChild(properties, "scheme")?.remove();
+    });
+  };
+  normalizeRichText(sheetDocument);
+  const sharedStringsFile = zip.file("xl/sharedStrings.xml");
+  if (sharedStringsFile) {
+    const sharedStringsDocument = parseXml(await sharedStringsFile.async("string"));
+    normalizeRichText(sharedStringsDocument);
+    zip.file("xl/sharedStrings.xml", new XMLSerializer().serializeToString(sharedStringsDocument));
+  }
   const applyVndStyle = createVndStyleFactory(stylesDocument);
   const applyWrapTextStyle = createWrapTextStyleFactory(stylesDocument);
   const applyBorderStyle = createBorderStyleFactory(stylesDocument);

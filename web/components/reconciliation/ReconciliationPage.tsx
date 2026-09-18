@@ -13,9 +13,11 @@ import {
   Loader2,
   Plus,
   RotateCcw,
+  Trash2,
   UploadCloud,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -39,6 +41,42 @@ import {
 
 const TEMPLATE_URL = "/templates/soa-mt-life-monthly.xlsx";
 
+type ReconciliationBatchItem = {
+  id: string;
+  data: ReconciliationData;
+  clientId: string;
+};
+
+function fileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function uniqueFileName(fileName: string, usedNames: Set<string>) {
+  if (!usedNames.has(fileName)) {
+    usedNames.add(fileName);
+    return fileName;
+  }
+  const dotIndex = fileName.lastIndexOf(".");
+  const base = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName;
+  const extension = dotIndex > 0 ? fileName.slice(dotIndex) : "";
+  let suffix = 2;
+  let candidate = `${base}_${suffix}${extension}`;
+  while (usedNames.has(candidate)) candidate = `${base}_${++suffix}${extension}`;
+  usedNames.add(candidate);
+  return candidate;
+}
+
 function formatVnd(value: number) {
   return new Intl.NumberFormat("vi-VN", {
     style: "currency",
@@ -57,35 +95,46 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 }
 
 export default function ReconciliationPage() {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [data, setData] = useState<ReconciliationData | null>(null);
+  const [items, setItems] = useState<ReconciliationBatchItem[]>([]);
+  const [activeItemId, setActiveItemId] = useState("");
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [clients, setClients] = useState<ReconciliationClient[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
-  const [selectedClientId, setSelectedClientId] = useState("");
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [clientSourceOpen, setClientSourceOpen] = useState(false);
   const [clientDialogMode, setClientDialogMode] = useState<"directory" | "create">("directory");
 
+  const activeItem = useMemo(
+    () => items.find((item) => item.id === activeItemId) ?? items[0] ?? null,
+    [activeItemId, items]
+  );
+  const data = activeItem?.data ?? null;
+  const selectedClientId = activeItem?.clientId ?? "";
   const selectedClient = useMemo(
     () => clients.find((client) => client.id === selectedClientId) ?? null,
     [clients, selectedClientId]
   );
+  const incompleteCount = items.filter(
+    (item) => !clients.some((client) => client.id === item.clientId)
+  ).length;
 
-  const refreshClients = useCallback(async (preferredClient?: ReconciliationClient) => {
+  const refreshClients = useCallback(async () => {
     setClientsLoading(true);
     try {
       const nextClients = await listReconciliationClients();
       setClients(nextClients);
-      setSelectedClientId((current) => {
-        if (preferredClient && nextClients.some((client) => client.id === preferredClient.id)) {
-          return preferredClient.id;
-        }
-        return nextClients.some((client) => client.id === current) ? current : "";
-      });
+      setItems((current) =>
+        current.map((item) =>
+          nextClients.some((client) => client.id === item.clientId)
+            ? item
+            : { ...item, clientId: "" }
+        )
+      );
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Could not load the client source.";
       toast.error(message);
@@ -103,28 +152,47 @@ export default function ReconciliationPage() {
     setClientSourceOpen(true);
   }
 
-  async function readFile(file: File) {
-    if (!/\.xlsx?$/i.test(file.name)) {
-      setData(null);
-      setError("Please select an .xlsx or .xls Excel file.");
-      return;
-    }
-
+  async function readFiles(files: File[]) {
+    if (!files.length || reading) return;
     setReading(true);
     setError("");
+    const existingIds = new Set(items.map((item) => item.id));
+    const nextItems: ReconciliationBatchItem[] = [];
+    const failures: string[] = [];
     try {
-      const parsed = parseReconciliationWorkbook(await file.arrayBuffer(), file.name);
-      setData(parsed);
-      const matchingClient = clients.find(
-        (client) => client.name.trim().toLowerCase() === parsed.merchantName.trim().toLowerCase()
-      );
-      setSelectedClientId(matchingClient?.id ?? "");
-      toast.success(`Loaded ${parsed.rows.length} reconciliation transactions.`);
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Could not read the reconciliation file.";
-      setData(null);
-      setError(message);
-      toast.error(message);
+      for (const file of files) {
+        const id = fileKey(file);
+        if (existingIds.has(id)) {
+          failures.push(`${file.name}: ${t("This file has already been added.")}`);
+          continue;
+        }
+        existingIds.add(id);
+        if (!/\.xlsx?$/i.test(file.name)) {
+          failures.push(`${file.name}: ${t("Please select an .xlsx or .xls Excel file.")}`);
+          continue;
+        }
+        try {
+          const parsed = parseReconciliationWorkbook(await file.arrayBuffer(), file.name);
+          const merchantName = parsed.merchantName.trim().toLowerCase();
+          const matchingClient = clients.find(
+            (client) => client.name.trim().toLowerCase() === merchantName
+          );
+          nextItems.push({ id, data: parsed, clientId: matchingClient?.id ?? "" });
+        } catch (caught) {
+          const message =
+            caught instanceof Error ? caught.message : "Could not read the reconciliation file.";
+          failures.push(`${file.name}: ${t(message)}`);
+        }
+      }
+      if (nextItems.length) {
+        setItems((current) => [...current, ...nextItems]);
+        setActiveItemId(nextItems[0].id);
+        toast.success(t("Loaded {{count}} reconciliation files.", { count: nextItems.length }));
+      }
+      if (failures.length) {
+        setError(failures.join("\n"));
+        toast.error(t("Could not add {{count}} files.", { count: failures.length }));
+      }
     } finally {
       setReading(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -134,14 +202,31 @@ export default function ReconciliationPage() {
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragging(false);
-    const file = event.dataTransfer.files[0];
-    if (file) void readFile(file);
+    void readFiles(Array.from(event.dataTransfer.files));
   }
 
-  async function exportSoa() {
-    if (!data || exporting) return;
-    if (!selectedClient) {
-      toast.error("Please select a client before exporting the SOA.");
+  function assignClient(itemId: string, clientId: string) {
+    setItems((current) =>
+      current.map((item) => (item.id === itemId ? { ...item, clientId } : item))
+    );
+  }
+
+  function removeItem(itemId: string) {
+    setItems((current) => {
+      const removedIndex = current.findIndex((item) => item.id === itemId);
+      const next = current.filter((item) => item.id !== itemId);
+      if (itemId === activeItemId) {
+        setActiveItemId(next[Math.min(Math.max(removedIndex, 0), next.length - 1)]?.id ?? "");
+      }
+      return next;
+    });
+    setClientPickerOpen(false);
+  }
+
+  async function exportSoas() {
+    if (!items.length || exporting) return;
+    if (incompleteCount) {
+      toast.error(t("Please select a client for every reconciliation file before exporting."));
       return;
     }
 
@@ -149,20 +234,20 @@ export default function ReconciliationPage() {
     try {
       const response = await fetch(TEMPLATE_URL);
       if (!response.ok) throw new Error("Could not load the MT LIFE SOA template.");
-      const output = await createStatementOfAccount(
-        await response.arrayBuffer(),
-        data,
-        selectedClient
+      const templateBuffer = await response.arrayBuffer();
+      const outputs = await Promise.all(
+        items.map((item) => {
+          const client = clients.find((candidate) => candidate.id === item.clientId);
+          if (!client) throw new Error(`No client selected for ${item.data.sourceFileName}.`);
+          return createStatementOfAccount(templateBuffer.slice(0), item.data, client);
+        })
       );
-      const url = URL.createObjectURL(output.blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = output.fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      toast.success("SOA exported using the MT LIFE template.");
+      const usedNames = new Set<string>();
+      for (const [index, output] of outputs.entries()) {
+        if (index > 0) await new Promise((resolve) => window.setTimeout(resolve, 300));
+        downloadBlob(output.blob, uniqueFileName(output.fileName, usedNames));
+      }
+      toast.success(t("Requested download of {{count}} SOA files.", { count: outputs.length }));
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Could not export the SOA file.";
       toast.error(message);
@@ -172,13 +257,22 @@ export default function ReconciliationPage() {
   }
 
   function reset() {
-    setData(null);
+    setItems([]);
+    setActiveItemId("");
     setError("");
-    setSelectedClientId("");
+    setClientPickerOpen(false);
   }
 
   return (
     <div className="w-full space-y-4">
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        multiple
+        className="hidden"
+        onChange={(event) => void readFiles(Array.from(event.target.files ?? []))}
+      />
       <div className="flex flex-col gap-3 py-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="flex items-center gap-2 text-[30px] font-extrabold tracking-tight text-foreground">
           <FileCheck2 className="h-7 w-7 text-primary" />
@@ -186,7 +280,7 @@ export default function ReconciliationPage() {
         </h1>
 
         <div className="flex flex-wrap gap-2">
-          {!data ? (
+          {!items.length ? (
             <>
               <Button
                 variant="outline"
@@ -205,31 +299,44 @@ export default function ReconciliationPage() {
               </Button>
             </>
           ) : null}
-          {data ? (
+          {items.length ? (
             <>
               <Button
                 variant="outline"
                 className="cursor-pointer"
+                onClick={() => inputRef.current?.click()}
+                disabled={exporting || reading}
+              >
+                {reading ? <Loader2 className="animate-spin" /> : <UploadCloud />}
+                Add files
+              </Button>
+              <Button
+                variant="outline"
+                className="cursor-pointer"
                 onClick={reset}
-                disabled={exporting}
+                disabled={exporting || reading}
               >
                 <RotateCcw />
-                Choose another file
+                Clear all
               </Button>
               <Button
                 className="cursor-pointer"
-                onClick={() => void exportSoa()}
-                disabled={exporting || !selectedClient}
+                onClick={() => void exportSoas()}
+                disabled={exporting || reading || incompleteCount > 0}
               >
                 {exporting ? <Loader2 className="animate-spin" /> : <Download />}
-                {exporting ? "Exporting..." : "Export SOA"}
+                {exporting
+                  ? "Exporting..."
+                  : items.length === 1
+                    ? "Export SOA"
+                    : "Export all SOAs"}
               </Button>
             </>
           ) : null}
         </div>
       </div>
 
-      {!data ? (
+      {!items.length ? (
         <div
           role="button"
           tabIndex={0}
@@ -250,20 +357,10 @@ export default function ReconciliationPage() {
               : "border-border bg-card hover:border-primary/60 hover:bg-muted/30"
           }`}
         >
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void readFile(file);
-            }}
-          />
           {reading ? (
             <>
               <Loader2 className="h-12 w-12 animate-spin text-primary" />
-              <p className="mt-4 font-semibold">Reading reconciliation file...</p>
+              <p className="mt-4 font-semibold">Reading reconciliation files...</p>
             </>
           ) : (
             <>
@@ -271,9 +368,11 @@ export default function ReconciliationPage() {
                 <UploadCloud className="h-10 w-10" />
               </div>
               <p className="mt-5 text-lg font-semibold text-foreground">
-                Drag and drop the reconciliation file here
+                Drag and drop reconciliation files here
               </p>
-              <p className="mt-1 text-sm text-muted-foreground">or click to select an Excel file</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                or click to select one or more Excel files
+              </p>
               <span className="mt-4 rounded-full border bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
                 Supports .xlsx and .xls
               </span>
@@ -286,9 +385,72 @@ export default function ReconciliationPage() {
             <div className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
               <div className="min-w-0">
-                <p className="font-semibold">Data is valid and ready to export</p>
-                <p className="mt-1 truncate text-sm opacity-90">{data.sourceFileName}</p>
+                <p className="font-semibold">Reconciliation files loaded successfully</p>
+                <p className="mt-1 text-sm opacity-90">
+                  {t("{{count}} files · {{assigned}}/{{count}} recipients assigned", { count: items.length, assigned: items.length - incompleteCount })}
+                </p>
               </div>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="border-b px-5 py-4">
+              <h2 className="font-semibold text-foreground">
+                <span>Imported files</span> ({items.length})
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Select a file to review and assign its SOA recipient.
+              </p>
+            </div>
+            <div className="divide-y">
+              {items.map((item) => {
+                const itemClient = clients.find((client) => client.id === item.clientId);
+                const isActive = item.id === activeItem?.id;
+                return (
+                  <div
+                    key={item.id}
+                    className={`flex w-full items-center gap-2 border-l-4 pr-3 transition-colors ${isActive ? "border-l-primary bg-primary/10 ring-1 ring-inset ring-primary/25" : "border-l-transparent hover:bg-muted/50"}`}
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={isActive}
+                      onClick={() => {
+                        setActiveItemId(item.id);
+                        setClientPickerOpen(false);
+                      }}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-4 pl-4 pr-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                    >
+                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                      <FileCheck2 className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      {isActive ? <p className="mb-1 text-xs font-semibold text-primary">Currently reviewing</p> : null}
+                      <p title={item.data.sourceFileName} className={`truncate ${isActive ? "font-semibold text-primary" : "font-medium text-foreground"}`}>{item.data.sourceFileName}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {item.data.merchantName || t("Unknown merchant")} · {item.data.monthLabel} · {t("{{count}} transactions", { count: item.data.rows.length })}
+                      </p>
+                    </div>
+                    <span className={`max-w-[35%] truncate rounded-full px-2.5 py-1 text-xs font-medium ${itemClient ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"}`}>
+                      {itemClient?.name ?? "Needs client"}
+                    </span>
+                    </button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Remove file"
+                      className="shrink-0 cursor-pointer text-muted-foreground hover:text-destructive"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removeItem(item.id);
+                      }}
+                      disabled={exporting}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -296,7 +458,7 @@ export default function ReconciliationPage() {
             <SummaryCard label="Transactions" value={data.rows.length.toLocaleString("en-US")} />
             <SummaryCard label="Total combo price" value={formatVnd(data.totals.comboPrice)} />
             <SummaryCard
-              label={`Service fee${data.serviceFeeRate === null ? "" : ` (${data.serviceFeeRate}%)`}`}
+              label={`${t("Service fee")}${data.serviceFeeRate === null ? "" : ` (${data.serviceFeeRate}%)`}`}
               value={formatVnd(data.totals.serviceFee)}
             />
             <SummaryCard label="Reconciliation amount" value={formatVnd(data.totals.reconciliationAmount)} />
@@ -356,7 +518,7 @@ export default function ReconciliationPage() {
                                 client.bankName,
                               ].join(" ")}
                               onSelect={() => {
-                                setSelectedClientId(client.id);
+                                if (activeItem) assignClient(activeItem.id, client.id);
                                 setClientPickerOpen(false);
                               }}
                               className="cursor-pointer"
@@ -456,8 +618,8 @@ export default function ReconciliationPage() {
               <div>
                 <h2 className="font-semibold text-foreground">Data to be added to the SOA</h2>
                 <p className="text-sm text-muted-foreground">
-                  Period {data.monthLabel}
-                  {data.statementId ? ` · Bill ID ${data.statementId}` : ""}
+                  {t("Period")}: {data.monthLabel}
+                  {data.statementId ? ` · ${t("Bill ID")}: ${data.statementId}` : ""}
                   {data.merchantName ? ` · ${data.merchantName}` : ""}
                 </p>
               </div>
@@ -521,8 +683,8 @@ export default function ReconciliationPage() {
         <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
-            <p className="font-semibold">Could not read the file</p>
-            <p className="mt-1">{error}</p>
+            <p className="font-semibold">Some files could not be added</p>
+            <p className="mt-1 whitespace-pre-line">{error}</p>
           </div>
         </div>
       ) : null}
@@ -531,7 +693,10 @@ export default function ReconciliationPage() {
         open={clientSourceOpen}
         onOpenChange={setClientSourceOpen}
         clients={clients}
-        onChanged={refreshClients}
+        onChanged={async (client) => {
+          await refreshClients();
+          if (client && activeItem) assignClient(activeItem.id, client.id);
+        }}
         mode={clientDialogMode}
       />
     </div>
