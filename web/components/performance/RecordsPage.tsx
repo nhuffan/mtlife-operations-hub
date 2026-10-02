@@ -19,7 +19,7 @@ export type Filters = {
   month?: string;
   from?: string;
   to?: string;
-  bd_id?: string;
+  bd_ids?: string[];
   customer_name?: string;
   note?: string;
   category?: "entertainment" | "restaurant";
@@ -218,7 +218,7 @@ export default function RecordsPage({ isAdmin }: { isAdmin: boolean }) {
 
         if (filters.from && r.event_date < filters.from) return false;
         if (filters.to && r.event_date > filters.to) return false;
-        if (filters.bd_id && r.bd_id !== filters.bd_id) return false;
+        if (filters.bd_ids?.length && !filters.bd_ids.includes(r.bd_id ?? "")) return false;
         if (filters.category && r.category !== filters.category) return false;
 
         if (

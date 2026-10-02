@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronsUpDown,
   Download,
+  ChevronDown,
   FileCheck2,
   Loader2,
   Plus,
@@ -38,6 +39,13 @@ import {
   parseReconciliationWorkbook,
   type ReconciliationData,
 } from "@/lib/features/reconciliation/reconciliation";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const TEMPLATE_URL = "/templates/soa-mt-life-monthly.xlsx";
 
@@ -223,7 +231,7 @@ export default function ReconciliationPage() {
     setClientPickerOpen(false);
   }
 
-  async function exportSoas() {
+  async function exportSoas(format: "excel" | "pdf") {
     if (!items.length || exporting) return;
     if (incompleteCount) {
       toast.error(t("Please select a client for every reconciliation file before exporting."));
@@ -235,19 +243,19 @@ export default function ReconciliationPage() {
       const response = await fetch(TEMPLATE_URL);
       if (!response.ok) throw new Error("Could not load the MT LIFE SOA template.");
       const templateBuffer = await response.arrayBuffer();
-      const outputs = await Promise.all(
-        items.map((item) => {
-          const client = clients.find((candidate) => candidate.id === item.clientId);
-          if (!client) throw new Error(`No client selected for ${item.data.sourceFileName}.`);
-          return createStatementOfAccount(templateBuffer.slice(0), item.data, client);
-        })
-      );
       const usedNames = new Set<string>();
-      for (const [index, output] of outputs.entries()) {
-        if (index > 0) await new Promise((resolve) => window.setTimeout(resolve, 300));
+      // Render one workbook at a time to limit browser memory during batch exports.
+      for (const item of items) {
+        const client = clients.find((candidate) => candidate.id === item.clientId);
+        if (!client) throw new Error(`No client selected for ${item.data.sourceFileName}.`);
+        const workbook = await createStatementOfAccount(templateBuffer.slice(0), item.data, client);
+        const output = format === "pdf"
+          ? await (await import("@/lib/features/reconciliation/statementPdf")).createStatementPdf(workbook)
+          : workbook;
         downloadBlob(output.blob, uniqueFileName(output.fileName, usedNames));
+        if (items.length > 1) await new Promise((resolve) => window.setTimeout(resolve, 300));
       }
-      toast.success(t("Requested download of {{count}} SOA files.", { count: outputs.length }));
+      toast.success(t("Requested download of {{count}} SOA files.", { count: items.length }));
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Could not export the SOA file.";
       toast.error(message);
@@ -319,18 +327,26 @@ export default function ReconciliationPage() {
                 <RotateCcw />
                 Clear all
               </Button>
-              <Button
-                className="cursor-pointer"
-                onClick={() => void exportSoas()}
-                disabled={exporting || reading || incompleteCount > 0}
-              >
-                {exporting ? <Loader2 className="animate-spin" /> : <Download />}
-                {exporting
-                  ? "Exporting..."
-                  : items.length === 1
-                    ? "Export SOA"
-                    : "Export all SOAs"}
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    className="cursor-pointer"
+                    disabled={exporting || reading || incompleteCount > 0}
+                  >
+                    {exporting ? <Loader2 className="animate-spin" /> : <Download />}
+                    {exporting
+                      ? "Exporting..."
+                      : items.length === 1
+                        ? "Export SOA"
+                        : "Export all SOAs"}
+                    <ChevronDown />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => void exportSoas("excel")}>Excel (.xlsx)</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void exportSoas("pdf")}>PDF (.pdf)</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           ) : null}
         </div>

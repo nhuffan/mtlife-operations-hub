@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import BdNameFilter from "@/components/shared/BdNameFilter";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -64,6 +66,9 @@ export default function FilterDialog({
           <DialogTitle className="text-xl font-semibold tracking-tight">
             Filter
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Choose filters for performance records, then apply your selection.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -93,24 +98,11 @@ export default function FilterDialog({
 
           <div className="w-full">
             <p className="mb-1.5 text-sm font-medium text-foreground">BD Name</p>
-            <Select
-              value={draft.bd_id ?? ALL}
-              onValueChange={(v) =>
-                setDraft((d) => ({ ...d, bd_id: v === ALL ? undefined : v }))
-              }
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select BD" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All</SelectItem>
-                {bdList.map((x) => (
-                  <SelectItem key={x.id} value={x.id}>
-                    {x.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <BdNameFilter
+              options={bdList}
+              value={draft.bd_ids}
+              onChange={(bd_ids) => setDraft((current) => ({ ...current, bd_ids }))}
+            />
           </div>
 
           <div className="w-full">

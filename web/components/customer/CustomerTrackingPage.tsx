@@ -142,7 +142,7 @@ export default function CustomerTrackingPage({
 
         if (filters.from && r.event_date < filters.from) return false;
         if (filters.to && r.event_date > filters.to) return false;
-        if (filters.bd_id && r.bd_id !== filters.bd_id) return false;
+        if (filters.bd_ids?.length && !filters.bd_ids.includes(r.bd_id ?? "")) return false;
 
         if (
           filters.customer_name &&
@@ -201,14 +201,9 @@ export default function CustomerTrackingPage({
       return sum + (r.branch ?? 0);
     }, 0);
 
-    const totalHotList = filtered.reduce((sum, r) => {
-      return sum + (r.in_hot_list ?? 0);
-    }, 0);
-
     return {
       totalCustomers,
       totalBranches,
-      totalHotList,
     };
   }, [filtered]);
 

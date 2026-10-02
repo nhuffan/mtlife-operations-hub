@@ -35,7 +35,6 @@ export default function CustomerTrackingTable({
     stats: {
         totalCustomers: number;
         totalBranches: number;
-        totalHotList: number;
     };
 }) {
     const [selectionMode, setSelectionMode] = useState(false);
@@ -179,7 +178,7 @@ export default function CustomerTrackingTable({
                     </div>
 
                     <div className="w-full overflow-x-auto">
-                        <table className="w-full min-w-[1340px] table-fixed text-center text-sm">
+                        <table className="w-full min-w-[1220px] table-fixed text-center text-sm">
                             <thead className="sticky top-0 z-10 border-b bg-muted/90 shadow-sm backdrop-blur">
                                 <tr>
                                     <th className="w-[120px] p-2 pl-5 text-left">Date</th>
@@ -195,13 +194,6 @@ export default function CustomerTrackingTable({
                                         Branches
                                         <span className="ml-2 inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
                                             {stats.totalBranches.toLocaleString("en-US")}
-                                        </span>
-                                    </th>
-
-                                    <th className="w-[120px] p-2">
-                                        In hot list
-                                        <span className="ml-2 inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                                            {stats.totalHotList.toLocaleString("en-US")}
                                         </span>
                                     </th>
 
@@ -242,10 +234,7 @@ export default function CustomerTrackingTable({
                                             </td>
 
                                             <td
-                                                className={`overflow-hidden whitespace-nowrap p-2 text-ellipsis ${(r.in_hot_list ?? 0) === 0
-                                                        ? "text-muted-foreground opacity-60"
-                                                        : ""
-                                                    }`}
+                                                className="overflow-hidden whitespace-nowrap p-2 text-ellipsis"
                                                 title={r.customer_name}
                                             >
                                                 {r.customer_name}
@@ -254,12 +243,6 @@ export default function CustomerTrackingTable({
                                             <td className="p-2">
                                                 {r.branch != null
                                                     ? r.branch.toLocaleString("en-US")
-                                                    : "—"}
-                                            </td>
-
-                                            <td className="p-2">
-                                                {r.in_hot_list != null
-                                                    ? r.in_hot_list.toLocaleString("en-US")
                                                     : "—"}
                                             </td>
 

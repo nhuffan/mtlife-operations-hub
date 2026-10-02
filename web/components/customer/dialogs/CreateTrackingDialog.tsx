@@ -60,7 +60,6 @@ export default function CreateTrackingDialog({
     event_date: today,
     customer_name: "",
     branch: 0,
-    in_hot_list: 0,
     bd_id: "",
     combo_voucher: false,
     offer_ads: false,
@@ -69,7 +68,6 @@ export default function CreateTrackingDialog({
   });
 
   const [branchInput, setBranchInput] = useState("0");
-  const [hotListInput, setHotListInput] = useState("0");
   const [isLoading, setIsLoading] = useState(false);
 
   const isSaveDisabled =
@@ -85,7 +83,6 @@ export default function CreateTrackingDialog({
         event_date: form.event_date,
         customer_name: form.customer_name.trim(),
         branch: form.branch,
-        in_hot_list: form.in_hot_list,
         bd_id: form.bd_id,
         combo_voucher: form.combo_voucher,
         offer_ads: form.offer_ads,
@@ -106,7 +103,6 @@ export default function CreateTrackingDialog({
         event_date: today,
         customer_name: "",
         branch: 0,
-        in_hot_list: 0,
         bd_id: "",
         combo_voucher: false,
         offer_ads: false,
@@ -114,7 +110,6 @@ export default function CreateTrackingDialog({
         info: null,
       });
       setBranchInput("0");
-      setHotListInput("0");
       toast.success("Customer created successfully.");
     } finally {
       setIsLoading(false);
@@ -182,7 +177,7 @@ export default function CreateTrackingDialog({
             title="Customer"
             description="Identify the customer and capture their current footprint."
           >
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <CustomerFormField id="customer-tracking-name" label="Customer name">
                 <Input
                   id="customer-tracking-name"
@@ -206,22 +201,6 @@ export default function CreateTrackingDialog({
                     const parsed = parseNumberInput(e.target.value) ?? 0;
                     setBranchInput(formatted);
                     setForm((f) => ({ ...f, branch: parsed }));
-                  }}
-                  placeholder="0"
-                />
-              </CustomerFormField>
-
-              <CustomerFormField id="customer-hot-list" label="In hot list">
-                <Input
-                  id="customer-hot-list"
-                  className="h-10"
-                  inputMode="numeric"
-                  value={hotListInput}
-                  onChange={(e) => {
-                    const formatted = formatNumberInput(e.target.value);
-                    const parsed = parseNumberInput(e.target.value) ?? 0;
-                    setHotListInput(formatted);
-                    setForm((f) => ({ ...f, in_hot_list: parsed }));
                   }}
                   placeholder="0"
                 />

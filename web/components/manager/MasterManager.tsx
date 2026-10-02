@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -94,7 +95,7 @@ function getMedalByIndex(index: number) {
 }
 
 type SortDirection = "asc" | "desc";
-type BdSortField = "points" | "money" | "newCustomers" | "newHotList";
+type BdSortField = "points" | "money" | "newCustomers";
 type BdLevelMonthlyKpiRow = {
   id: string;
   bd_level_id: string;
@@ -131,7 +132,7 @@ export default function MasterManager({
   >({});
 
   const [trackingTotals, setTrackingTotals] = useState<
-    Record<string, { newCustomers: number; newHotList: number }>
+    Record<string, { newCustomers: number }>
   >({});
 
   const [monthOptions, setMonthOptions] = useState<string[]>([]);
@@ -169,7 +170,7 @@ export default function MasterManager({
         const { data: trackingRows, error: trackingError } = isBdCategory
           ? await supabase
             .from("customer_tracking")
-            .select("bd_id, event_date, branch, in_hot_list, combo_voucher, offer_ads")
+            .select("bd_id, event_date, branch")
           : { data: [], error: null };
 
         if (recordsError) {
@@ -239,22 +240,19 @@ export default function MasterManager({
 
           const trackingMap: Record<
             string,
-            { newCustomers: number; newHotList: number }
+            { newCustomers: number }
           > = {};
 
           filteredTrackingRows.forEach((r) => {
             if (!r.bd_id) return;
-            if (r.combo_voucher !== true && r.offer_ads !== true) return;
 
             if (!trackingMap[r.bd_id]) {
               trackingMap[r.bd_id] = {
                 newCustomers: 0,
-                newHotList: 0,
               };
             }
 
             trackingMap[r.bd_id].newCustomers += r.branch ?? 0;
-            trackingMap[r.bd_id].newHotList += r.in_hot_list ?? 0;
           });
 
           setTrackingTotals(trackingMap);
@@ -485,8 +483,7 @@ export default function MasterManager({
         (monthData?.points ?? 0) > 0 ||
         (monthData?.money ?? 0) > 0 ||
         (monthData?.packageAmount ?? 0) > 0 ||
-        (monthTracking?.newCustomers ?? 0) > 0 ||
-        (monthTracking?.newHotList ?? 0) > 0;
+        (monthTracking?.newCustomers ?? 0) > 0;
       return hasRecords;
     }
 
@@ -499,8 +496,6 @@ export default function MasterManager({
       switch (field) {
         case "newCustomers":
           return trackingTotals[id]?.newCustomers ?? 0;
-        case "newHotList":
-          return trackingTotals[id]?.newHotList ?? 0;
         case "money":
           return totals[id]?.money ?? 0;
         case "points":
@@ -521,7 +516,6 @@ export default function MasterManager({
 
       const ALL_FIELDS = [
         "newCustomers",
-        "newHotList",
         "points",
         "money",
       ] as const;
@@ -554,8 +548,6 @@ export default function MasterManager({
       switch (field) {
         case "newCustomers":
           return trackingTotals[id]?.newCustomers ?? 0;
-        case "newHotList":
-          return trackingTotals[id]?.newHotList ?? 0;
         case "money":
           return totals[id]?.money ?? 0;
         case "points":
@@ -824,7 +816,6 @@ export default function MasterManager({
                       <th className="w-[140px] p-2 text-center">BD Level</th>
                     )}
                     <th className="w-[130px] p-2 text-center">New Customers</th>
-                    <th className="w-[130px] p-2 text-center">New In Hot List</th>
                     <th className="w-[130px] p-2 text-center">Points</th>
                     {selectedMonth !== ALL_TIME && (
                       <th className="w-[130px] p-2 text-center">Performance</th>
@@ -935,10 +926,6 @@ export default function MasterManager({
 
                         <td className="p-2 text-center tabular-nums">
                           {(trackingTotals[it.id]?.newCustomers ?? 0).toLocaleString("en-US")}
-                        </td>
-
-                        <td className="p-2 text-center tabular-nums">
-                          {(trackingTotals[it.id]?.newHotList ?? 0).toLocaleString("en-US")}
                         </td>
 
                         <td className="p-2 text-center tabular-nums">
@@ -1066,7 +1053,6 @@ export default function MasterManager({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="newCustomers">New Customers</SelectItem>
-                        <SelectItem value="newHotList">New In Hot List</SelectItem>
                         <SelectItem value="points">Points</SelectItem>
                         <SelectItem value="money">Bonus</SelectItem>
                       </SelectContent>
@@ -1162,6 +1148,9 @@ export default function MasterManager({
               <DialogTitle className="text-xl font-semibold tracking-tight">
                 {editing ? ui.editDialogTitle : ui.addDialogTitle}
               </DialogTitle>
+              <DialogDescription className="sr-only">
+                Enter the item details, then save your changes.
+              </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-3">
@@ -1232,12 +1221,12 @@ export default function MasterManager({
               </DialogTitle>
             </DialogHeader>
 
-            <p className="text-sm text-muted-foreground">
+            <DialogDescription>
               This type is currently used in existing records.
               <br />
               <br />
               Please go to the <b>Home</b> page and delete those records first.
-            </p>
+            </DialogDescription>
 
             <DialogFooter>
               <Button

@@ -788,6 +788,9 @@ export async function createStatementOfAccount(
     const row = getRow(sheetDocument, rowNumber);
     if (!row) return;
     const cell = ensureCell(sheetDocument, row, "E");
+    if (rowNumber === 6 || rowNumber === 7) {
+      matchCellFont(stylesDocument, cell, ensureCell(sheetDocument, row, "B"));
+    }
     alignCell(stylesDocument, cell, "left");
     if (rowNumber === 6) {
       applyWrapTextStyle(cell);

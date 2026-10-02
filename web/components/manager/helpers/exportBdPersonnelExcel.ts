@@ -7,7 +7,6 @@ type BdPersonnelExportRow = {
   "BD Level"?: string;
   KPI?: string;
   "New Customers": string;
-  "New In Hot List": string;
   Points: string;
   Performance?: string;
   Bonus: string;
@@ -31,7 +30,7 @@ export function exportBdPersonnelToExcel(
       string,
       { points: number; money: number; packageAmount: number | null }
     >;
-    trackingTotals: Record<string, { newCustomers: number; newHotList: number }>;
+    trackingTotals: Record<string, { newCustomers: number }>;
   }
 ) {
   const data: BdPersonnelExportRow[] = rows.map((row, index) => {
@@ -45,9 +44,6 @@ export function exportBdPersonnelToExcel(
       Name: row.label,
       "New Customers": (
         options.trackingTotals[row.id]?.newCustomers ?? 0
-      ).toLocaleString("en-US"),
-      "New In Hot List": (
-        options.trackingTotals[row.id]?.newHotList ?? 0
       ).toLocaleString("en-US"),
       Points: points.toLocaleString("en-US"),
       Bonus: (options.totals[row.id]?.money ?? 0).toLocaleString("en-US"),
@@ -73,7 +69,6 @@ export function exportBdPersonnelToExcel(
       "BD Level",
       "KPI",
       "New Customers",
-      "New In Hot List",
       "Points",
       "Performance",
       "Bonus",
@@ -84,7 +79,6 @@ export function exportBdPersonnelToExcel(
       "#",
       "Name",
       "New Customers",
-      "New In Hot List",
       "Points",
       "Bonus",
       "Package Amount",

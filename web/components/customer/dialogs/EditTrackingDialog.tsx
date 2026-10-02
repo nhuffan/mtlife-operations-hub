@@ -66,7 +66,6 @@ export default function EditTrackingDialog({
         event_date: "",
         customer_name: "",
         branch: 0,
-        in_hot_list: 0,
         bd_id: "",
         combo_voucher: false,
         offer_ads: false,
@@ -75,7 +74,6 @@ export default function EditTrackingDialog({
     });
 
     const [branchInput, setBranchInput] = useState("0");
-    const [hotListInput, setHotListInput] = useState("0");
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -85,7 +83,6 @@ export default function EditTrackingDialog({
             event_date: record.event_date ?? "",
             customer_name: record.customer_name ?? "",
             branch: record.branch ?? 0,
-            in_hot_list: record.in_hot_list ?? 0,
             bd_id: record.bd_id ?? "",
             combo_voucher: record.combo_voucher ?? false,
             offer_ads: record.offer_ads ?? false,
@@ -96,12 +93,6 @@ export default function EditTrackingDialog({
         setBranchInput(
             record.branch !== null && record.branch !== undefined
                 ? Number(record.branch).toLocaleString("en-US")
-                : "0"
-        );
-
-        setHotListInput(
-            record.in_hot_list !== null && record.in_hot_list !== undefined
-                ? Number(record.in_hot_list).toLocaleString("en-US")
                 : "0"
         );
     }, [open, record]);
@@ -116,7 +107,6 @@ export default function EditTrackingDialog({
 
     const originalCustomerName = (currentRecord.customer_name ?? "").trim();
     const originalBranch = currentRecord.branch ?? 0;
-    const originalHotList = currentRecord.in_hot_list ?? 0;
     const originalBdId = currentRecord.bd_id ?? "";
     const originalComboVoucher = currentRecord.combo_voucher ?? false;
     const originalOfferAds = currentRecord.offer_ads ?? false;
@@ -130,7 +120,6 @@ export default function EditTrackingDialog({
         normalizedCustomerName !== originalCustomerName ||
         form.event_date !== originalEventDate ||
         form.branch !== originalBranch ||
-        form.in_hot_list !== originalHotList ||
         form.bd_id !== originalBdId ||
         form.combo_voucher !== originalComboVoucher ||
         form.offer_ads !== originalOfferAds ||
@@ -152,7 +141,6 @@ export default function EditTrackingDialog({
                     event_date: form.event_date,
                     customer_name: normalizedCustomerName,
                     branch: form.branch,
-                    in_hot_list: form.in_hot_list,
                     bd_id: form.bd_id,
                     combo_voucher: form.combo_voucher,
                     offer_ads: form.offer_ads,
@@ -243,7 +231,7 @@ export default function EditTrackingDialog({
                         title="Customer"
                         description="Identify the customer and capture their current footprint."
                     >
-                        <div className="grid gap-4 sm:grid-cols-3">
+                        <div className="grid gap-4 sm:grid-cols-2">
                             <CustomerFormField id="edit-customer-name" label="Customer name">
                                 <Input
                                     id="edit-customer-name"
@@ -267,22 +255,6 @@ export default function EditTrackingDialog({
                                         const parsed = parseNumberInput(e.target.value) ?? 0;
                                         setBranchInput(formatted);
                                         setForm((f) => ({ ...f, branch: parsed }));
-                                    }}
-                                    placeholder="0"
-                                />
-                            </CustomerFormField>
-
-                            <CustomerFormField id="edit-customer-hot-list" label="In hot list">
-                                <Input
-                                    id="edit-customer-hot-list"
-                                    className="h-10"
-                                    inputMode="numeric"
-                                    value={hotListInput}
-                                    onChange={(e) => {
-                                        const formatted = formatNumberInput(e.target.value);
-                                        const parsed = parseNumberInput(e.target.value) ?? 0;
-                                        setHotListInput(formatted);
-                                        setForm((f) => ({ ...f, in_hot_list: parsed }));
                                     }}
                                     placeholder="0"
                                 />

@@ -25,6 +25,13 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   formatDateOnly,
   formatMonthLabel,
   getMonthKey,
@@ -723,22 +730,24 @@ export default function MerchantInvoicesPage({
 
       <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-xs lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-1 flex-wrap items-center gap-2">
-          <div className="flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <select
-              value={selectedMonth}
-              onChange={(event) => setSelectedMonth(event.target.value)}
-              className="cursor-pointer bg-transparent text-sm font-medium outline-none"
+          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <SelectTrigger
+              aria-label="Select month"
+              className="h-9 w-auto min-w-[160px] gap-2 border-primary/30 bg-background text-primary shadow-none hover:border-primary/40 hover:bg-primary/5"
             >
+              <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <SelectValue placeholder="Select month" />
+            </SelectTrigger>
+            <SelectContent>
               {monthOptions.map((month) => (
-                <option key={month} value={month}>
+                <SelectItem key={month} value={month}>
                   {month === ALL
                     ? `All (${rows.length} invoices)`
                     : `${formatMonthLabel(month)} (${rows.filter((row) => getMonthKey(row.created_at) === month).length} invoices)`}
-                </option>
+                </SelectItem>
               ))}
-            </select>
-          </div>
+            </SelectContent>
+          </Select>
 
           <div className="flex items-center gap-1 rounded-lg border bg-muted p-1 text-xs">
             {[

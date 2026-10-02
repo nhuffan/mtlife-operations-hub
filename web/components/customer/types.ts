@@ -4,7 +4,6 @@ export type TrackingRecordRow = {
   customer_name: string;
 
   branch: number | null;
-  in_hot_list: number | null;
   bd_id: string | null;
 
   combo_voucher: boolean | null;
@@ -27,7 +26,7 @@ export type TrackingFilters = {
   from?: string;
   to?: string;
   customer_name?: string;
-  bd_id?: string;
+  bd_ids?: string[];
   combo_voucher?: "all" | "yes" | "none";
   offer_ads?: "all" | "yes" | "none";
 };

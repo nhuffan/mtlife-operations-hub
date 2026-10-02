@@ -16,7 +16,6 @@ export function exportTrackingToExcel(
   }
 ) {
   const totalBranches = rows.reduce((sum, r) => sum + (r.branch ?? 0), 0);
-  const totalHotList = rows.reduce((sum, r) => sum + (r.in_hot_list ?? 0), 0);
   const totalCustomers = rows.length;
 
   const data = rows.map((r) => ({
@@ -25,10 +24,6 @@ export function exportTrackingToExcel(
     [`Branches (${totalBranches.toLocaleString("en-US")})`]:
       r.branch !== null && r.branch !== undefined
         ? r.branch.toLocaleString("en-US")
-        : "",
-    [`In hot list (${totalHotList.toLocaleString("en-US")})`]:
-      r.in_hot_list !== null && r.in_hot_list !== undefined
-        ? r.in_hot_list.toLocaleString("en-US")
         : "",
     "BD Name": maps?.bd?.[r.bd_id ?? ""] ?? "",
     "Combo/Voucher": yesNo(r.combo_voucher),

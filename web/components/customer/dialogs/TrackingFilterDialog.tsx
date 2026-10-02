@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import BdNameFilter from "@/components/shared/BdNameFilter";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -19,8 +21,6 @@ import {
 } from "@/components/ui/select";
 import type { TrackingFilters } from "../types";
 import { useMastersActive } from "@/lib/features/masters/useMasters";
-
-const ALL_VALUE = "__all__";
 
 export default function TrackingFilterDialog({
   open,
@@ -43,6 +43,9 @@ export default function TrackingFilterDialog({
           <DialogTitle className="text-xl font-semibold tracking-tight">
             Filter Customer
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Choose filters for customer records, then apply your selection.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-3">
@@ -86,27 +89,11 @@ export default function TrackingFilterDialog({
 
           <div>
             <p className="mb-1.5 text-sm font-medium text-foreground">BD Name</p>
-            <Select
-              value={draft.bd_id ?? ALL_VALUE}
-              onValueChange={(v) =>
-                setDraft((f) => ({
-                  ...f,
-                  bd_id: v === ALL_VALUE ? undefined : v,
-                }))
-              }
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select BD name" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_VALUE}>All</SelectItem>
-                {bdList.map((x) => (
-                  <SelectItem key={x.id} value={x.id}>
-                    {x.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <BdNameFilter
+              options={bdList}
+              value={draft.bd_ids}
+              onChange={(bd_ids) => setDraft((current) => ({ ...current, bd_ids }))}
+            />
           </div>
 
           <div>
