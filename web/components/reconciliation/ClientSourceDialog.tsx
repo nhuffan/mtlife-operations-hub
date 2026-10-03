@@ -86,7 +86,8 @@ interface ClientSourceDialogProps {
   onOpenChange: (open: boolean) => void;
   clients: ReconciliationClient[];
   onChanged: (client?: ReconciliationClient) => Promise<void> | void;
-  mode: "directory" | "create";
+  mode: "directory" | "create" | "edit";
+  initialClient?: ReconciliationClient;
 }
 
 export default function ClientSourceDialog({
@@ -95,6 +96,7 @@ export default function ClientSourceDialog({
   clients,
   onChanged,
   mode,
+  initialClient,
 }: ClientSourceDialogProps) {
   const { t } = useI18n();
   const [form, setForm] = useState<ReconciliationClientInput>(EMPTY_FORM);
@@ -147,13 +149,13 @@ export default function ClientSourceDialog({
 
   useEffect(() => {
     if (open) {
-      setForm(EMPTY_FORM);
-      setEditingId(null);
+      setForm(initialClient && mode === "edit" ? initialClient : EMPTY_FORM);
+      setEditingId(mode === "edit" ? initialClient?.id ?? null : null);
       setSearchQuery("");
-      setBankSelection("");
+      setBankSelection(mode === "edit" ? initialClient?.bankName ?? "" : "");
       setCustomBankName("");
     }
-  }, [open, mode]);
+  }, [open, mode, initialClient]);
 
   function updateField(field: keyof ReconciliationClientInput, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -183,26 +185,25 @@ export default function ClientSourceDialog({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!hasRequiredFields) {
-      toast.error("Enter the client name, address, and tax code.");
+      toast.error(t("Enter the client name, address, and tax code."));
       return;
     }
 
+    if (editingId && !hasEditChanges) return;
     setSaving(true);
     try {
       const saved = editingId
         ? await updateReconciliationClient(editingId, form)
         : await createReconciliationClient(form);
       await onChanged(saved);
-      toast.success(editingId ? "Client updated." : "Client added to the source.");
+      toast.success(t(editingId ? "Client updated." : "Client added."));
       resetForm();
-      if (mode === "create") onOpenChange(false);
+      if (mode !== "directory") onOpenChange(false);
     } catch (caught) {
       const error = caught as { code?: string; message?: string };
-      toast.error(
-        error.code === "23505"
-          ? "This client name already exists in the source."
-          : error.message || "Could not save the client."
-      );
+      toast.error(t(error.code === "23505"
+        ? "A client with this name already exists."
+        : "Could not save client details. Please try again."));
     } finally {
       setSaving(false);
     }
@@ -214,12 +215,11 @@ export default function ClientSourceDialog({
     try {
       await deleteReconciliationClient(deleteTarget.id);
       await onChanged();
-      toast.success("Client removed from the source.");
+      toast.success(t("Client deleted."));
       setDeleteTarget(null);
       if (editingId === deleteTarget.id) resetForm();
-    } catch (caught) {
-      const error = caught as { message?: string };
-      toast.error(error.message || "Could not delete the client.");
+    } catch {
+      toast.error(t("Could not delete the client."));
     } finally {
       setDeleting(false);
     }
@@ -235,17 +235,17 @@ export default function ClientSourceDialog({
         }}
       >
         <DialogContent
-          showCloseButton={mode === "create"}
+          showCloseButton={mode !== "directory"}
           className={
             mode === "directory"
               ? "h-[520px] max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:w-[880px] sm:max-w-4xl"
               : "max-h-[92dvh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl"
           }
         >
-          {mode === "create" ? (
+          {mode !== "directory" ? (
             <DialogHeader className="border-b bg-card px-5 py-4 pr-12 sm:px-6 sm:py-5">
               <DialogTitle className="text-xl font-semibold tracking-tight">
-                Add client
+                {t(mode === "edit" ? "Edit client" : "Add client")}
               </DialogTitle>
               <DialogDescription>
                 Add recipient details to the shared client source.
@@ -261,7 +261,7 @@ export default function ClientSourceDialog({
           )}
 
           <div className="min-h-0 space-y-4 overflow-y-auto bg-muted/25 px-4 py-4 sm:px-6 sm:py-5">
-            {mode === "create" ? (
+            {mode !== "directory" ? (
               <form
                 id="reconciliation-client-form"
                 onSubmit={submit}
@@ -646,15 +646,15 @@ export default function ClientSourceDialog({
           </div>
 
           <DialogFooter className="border-t bg-card px-4 py-3 sm:px-6 sm:py-4">
-            {mode === "create" ? (
+            {mode !== "directory" ? (
               <Button
                 type="submit"
                 form="reconciliation-client-form"
                 className="h-10 cursor-pointer rounded-lg px-6 disabled:cursor-not-allowed sm:min-w-36"
-                disabled={saving || !hasRequiredFields}
+                disabled={saving || !hasRequiredFields || Boolean(editingId && !hasEditChanges)}
               >
                 {saving ? <Loader2 className="animate-spin" /> : <Plus />}
-                {saving ? "Saving..." : "Add to source"}
+                {t(saving ? "Saving..." : mode === "edit" ? "Save changes" : "Add to source")}
               </Button>
             ) : (
               <Button
@@ -676,7 +676,7 @@ export default function ClientSourceDialog({
           if (!nextOpen && !deleting) setDeleteTarget(null);
         }}
         title="Delete client?"
-        description={t("{{name}} will be removed from the shared source.", { name: deleteTarget?.name ?? t("This client") })}
+        description={t("{{name}} will be removed from the client directory.", { name: deleteTarget?.name ?? t("This client") })}
         onConfirm={() => void confirmDelete()}
         loading={deleting}
       />

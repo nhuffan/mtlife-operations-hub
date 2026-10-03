@@ -220,7 +220,10 @@ export async function createStatementPdf(output: { blob: Blob; fileName: string 
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(2 * scale, 0, 0, 2 * scale, left * 2, top * 2);
       ctx.textBaseline = "top";
-      // Paint fills and perimeter borders first, including merged-cell edges.
+      // Collect each border once. The worker draws uniform vector lines after
+      // the page image, avoiding raster antialiasing and adjacent fills erasing edges.
+      const pageBorders = new Map<string, [number, number, number, number]>();
+      // Paint fills first, including merged-cell edges.
       for (const [itemIndex, item] of page.entries()) {
         if (itemIndex % 20 === 0) await yieldToBrowser();
         for (let c = 0; c < 8; c++) {
@@ -244,9 +247,15 @@ export async function createStatementPdf(output: { blob: Blob; fileName: string 
             )) continue;
             const edge = child(border, side);
             if (!edge?.getAttribute("style")) continue;
-            ctx.strokeStyle = color(child(edge, "color"), "#000000");
-            ctx.lineWidth = edge.getAttribute("style") === "medium" ? 1.5 : 0.7;
-            ctx.beginPath(); ctx.moveTo(xPositions[c] + points[0], item.y + points[1]); ctx.lineTo(xPositions[c] + points[2], item.y + points[3]); ctx.stroke();
+            // Normalized page coordinates keep the overlay aligned with the image
+            // regardless of portrait/landscape or the template's print scale.
+            const segment: [number, number, number, number] = [
+              (left + (xPositions[c] + points[0]) * scale) / pageWidth,
+              (top + (item.y + points[1]) * scale) / pageHeight,
+              (left + (xPositions[c] + points[2]) * scale) / pageWidth,
+              (top + (item.y + points[3]) * scale) / pageHeight,
+            ];
+            pageBorders.set(segment.map((value) => value.toFixed(8)).join(":"), segment);
           }
         }
       }
@@ -278,7 +287,7 @@ export async function createStatementPdf(output: { blob: Blob; fileName: string 
         canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not encode PDF page.")), "image/png");
       });
       const image = await imageBlob.arrayBuffer();
-      await requestWorker({ type: "page", image, landscape }, [image]);
+      await requestWorker({ type: "page", image, landscape, borders: [...pageBorders.values()] }, [image]);
     }
     const buffer = await requestWorker({ type: "finish" });
     if (!buffer) throw new Error("Could not finalize the PDF.");

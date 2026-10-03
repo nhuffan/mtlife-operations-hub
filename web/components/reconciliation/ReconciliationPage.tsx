@@ -3,7 +3,6 @@
 import { DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
-  BookUser,
   Building2,
   Check,
   CheckCircle2,
@@ -11,6 +10,7 @@ import {
   Download,
   ChevronDown,
   FileCheck2,
+  BookUser,
   Loader2,
   Plus,
   RotateCcw,
@@ -46,6 +46,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+import ExportHistory from "@/components/reconciliation/ExportHistory";
+import { archiveReconciliationExport, type PendingExport } from "@/lib/features/reconciliation/exports";
 
 const TEMPLATE_URL = "/templates/soa-mt-life-monthly.xlsx";
 
@@ -111,6 +114,12 @@ export default function ReconciliationPage() {
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [pendingExports, setPendingExports] = useState<PendingExport[]>([]);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const [exportHistoryOpen, setExportHistoryOpen] = useState(false);
+  const exportLock = useRef(false);
+  const archiveLock = useRef(false);
   const [clients, setClients] = useState<ReconciliationClient[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
@@ -143,13 +152,12 @@ export default function ReconciliationPage() {
             : { ...item, clientId: "" }
         )
       );
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Could not load the client source.";
-      toast.error(message);
+    } catch {
+      toast.error(t("Could not load the client directory. Please try again."));
     } finally {
       setClientsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void refreshClients();
@@ -231,14 +239,36 @@ export default function ReconciliationPage() {
     setClientPickerOpen(false);
   }
 
+  async function saveExports(exports: PendingExport[]) {
+    if (archiveLock.current) return;
+    archiveLock.current = true;
+    setArchiving(true);
+    try {
+      for (const item of exports) {
+        try {
+          await archiveReconciliationExport(item);
+          setPendingExports((current) => current.filter((entry) => entry.id !== item.id));
+          setHistoryRevision((current) => current + 1);
+        } catch {
+          toast.error(t("{{name}} is ready to download, but could not be saved to the client directory. Please retry saving.", { name: item.file_name }));
+        }
+      }
+    } finally {
+      archiveLock.current = false;
+      setArchiving(false);
+    }
+  }
+
   async function exportSoas(format: "excel" | "pdf") {
-    if (!items.length || exporting) return;
+    if (!items.length || exportLock.current || archiveLock.current) return;
     if (incompleteCount) {
       toast.error(t("Please select a client for every reconciliation file before exporting."));
       return;
     }
 
+    exportLock.current = true;
     setExporting(true);
+    const generated: PendingExport[] = [];
     try {
       const response = await fetch(TEMPLATE_URL);
       if (!response.ok) throw new Error("Could not load the MT LIFE SOA template.");
@@ -252,15 +282,26 @@ export default function ReconciliationPage() {
         const output = format === "pdf"
           ? await (await import("@/lib/features/reconciliation/statementPdf")).createStatementPdf(workbook)
           : workbook;
-        downloadBlob(output.blob, uniqueFileName(output.fileName, usedNames));
+        const fileName = uniqueFileName(output.fileName, usedNames);
+        downloadBlob(output.blob, fileName);
+        generated.push({
+          id: crypto.randomUUID(), created_at: new Date().toISOString(),
+          client_id: client.id, client_name: client.name, period_label: item.data.monthLabel,
+          source_file_name: item.data.sourceFileName, file_name: fileName,
+          file_size: output.blob.size, file_format: format, blob: output.blob,
+        });
         if (items.length > 1) await new Promise((resolve) => window.setTimeout(resolve, 300));
       }
       toast.success(t("Requested download of {{count}} SOA files.", { count: items.length }));
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Could not export the SOA file.";
-      toast.error(message);
+    } catch {
+      toast.error(t("Could not export the SOA file. Please try again."));
     } finally {
       setExporting(false);
+      if (generated.length) {
+        setPendingExports((current) => [...current, ...generated]);
+        await saveExports(generated);
+      }
+      exportLock.current = false;
     }
   }
 
@@ -288,16 +329,12 @@ export default function ReconciliationPage() {
         </h1>
 
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="cursor-pointer" onClick={() => setExportHistoryOpen(true)}>
+            <BookUser />
+            {t("Client directory")}
+          </Button>
           {!items.length ? (
             <>
-              <Button
-                variant="outline"
-                className="cursor-pointer"
-                onClick={() => openClientDialog("directory")}
-              >
-                <BookUser />
-                Client directory
-              </Button>
               <Button
                 className="cursor-pointer"
                 onClick={() => openClientDialog("create")}
@@ -331,7 +368,7 @@ export default function ReconciliationPage() {
                 <DropdownMenuTrigger asChild>
                   <Button
                     className="cursor-pointer"
-                    disabled={exporting || reading || incompleteCount > 0}
+                    disabled={exporting || archiving || reading || incompleteCount > 0}
                   >
                     {exporting ? <Loader2 className="animate-spin" /> : <Download />}
                     {exporting
@@ -352,6 +389,18 @@ export default function ReconciliationPage() {
         </div>
       </div>
 
+      {pendingExports.length > 0 ? (
+        <div className="space-y-3 rounded-xl border bg-card p-4" role="status">
+          <p className="text-sm">{archiving
+            ? t("Saving exported files...")
+            : t("{{count}} files are waiting to be saved. Retry before leaving this page.", { count: pendingExports.length })}</p>
+          {pendingExports.map((item) => <p key={item.id} className="truncate text-sm text-muted-foreground">{item.file_name}</p>)}
+          <Button variant="outline" disabled={archiving || exporting} onClick={() => void saveExports(pendingExports)}>
+            {archiving ? <Loader2 className="animate-spin" /> : <UploadCloud />}
+            {t("Retry saving")}
+          </Button>
+        </div>
+      ) : null}
       {!items.length ? (
         <div
           role="button"
@@ -558,14 +607,6 @@ export default function ReconciliationPage() {
                   </PopoverContent>
                 </Popover>
                 <Button
-                  variant="outline"
-                  className="shrink-0 cursor-pointer"
-                  onClick={() => openClientDialog("directory")}
-                >
-                  <BookUser />
-                  Client directory
-                </Button>
-                <Button
                   className="shrink-0 cursor-pointer"
                   onClick={() => openClientDialog("create")}
                 >
@@ -704,6 +745,8 @@ export default function ReconciliationPage() {
           </div>
         </div>
       ) : null}
+
+      <ExportHistory onClientsChanged={refreshClients} clients={clients} revision={historyRevision} open={exportHistoryOpen} onOpenChange={setExportHistoryOpen} />
 
       <ClientSourceDialog
         open={clientSourceOpen}
