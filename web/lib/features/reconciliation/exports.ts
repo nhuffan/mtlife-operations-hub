@@ -20,7 +20,7 @@ export type ReconciliationExport = {
   asset: ExportAsset;
 };
 
-export type PendingExport = Omit<ReconciliationExport, "asset" | "created_by"> & {
+export type PendingClientFile = Omit<ReconciliationExport, "asset" | "created_by"> & {
   blob: Blob;
   asset?: ExportAsset;
 };
@@ -40,17 +40,24 @@ export async function listReconciliationExports(page: number, clientId: string |
   return { rows: (data ?? []) as ReconciliationExport[], count: count ?? 0 };
 }
 
-export async function archiveReconciliationExport(item: PendingExport) {
-  // Keep the asset on the pending item so a metadata retry does not upload twice.
+export async function uploadClientFile(item: PendingClientFile) {
+  if (!item.client_id || !/\.(pdf|xlsx)$/i.test(item.file_name) || item.blob.size === 0 || item.blob.size > 5 * 1024 * 1024) {
+    throw new Error("Please choose a PDF or XLSX file up to 5 MB.");
+  }
+  // Retain the uploaded asset across metadata retries to avoid duplicate uploads.
   if (!item.asset) {
     const body = new FormData();
-    body.append("folder", `reconciliation_exports/${item.client_id ?? "unassigned"}`);
+    body.append("clientId", item.client_id);
     body.append("files", new File([item.blob], item.file_name, { type: item.blob.type }));
-    const response = await fetch("/api/cloudinary/upload", { method: "POST", body });
-    if (!response.ok) throw new Error("Could not archive the exported file.");
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Please sign in again to upload files.");
+    const response = await fetch("/api/reconciliation/files/upload", {
+      method: "POST", headers: { Authorization: `Bearer ${session.access_token}` }, body,
+    });
+    if (!response.ok) throw new Error("Could not upload the file. Please try again.");
     const result = await response.json();
     const asset = result.files?.[0] as ExportAsset | undefined;
-    if (!asset?.secure_url || !asset.public_id) throw new Error("Could not archive the exported file.");
+    if (!asset?.secure_url || !asset.public_id) throw new Error("Could not upload the file. Please try again.");
     item.asset = asset;
   }
   const record = {
@@ -76,7 +83,7 @@ export async function deleteReconciliationExport(id: string) {
   if (!response.ok) {
     const result = await response.json().catch(() => null);
     if (response.status === 401) throw new Error("Please sign in again to delete this file.");
-    if (response.status === 403) throw new Error("You can only delete files you exported.");
+    if (response.status === 403) throw new Error("You can only delete files you added.");
     throw new Error(result?.error === "Could not finish deleting the file. Please retry."
       ? result.error : "Could not delete the file. Please try again.");
   }

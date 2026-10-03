@@ -6,6 +6,25 @@ export const DEFAULT_LOCALE: Locale = "en";
 export const LOCALE_STORAGE_KEY = "operations-hub-locale";
 
 export const VI_TRANSLATIONS: Record<string, string> = {
+  "Reconciled files": "File đã đối soát",
+  "View client details and manage their documents.": "Xem thông tin client và quản lý tài liệu.",
+  "Select a client to view or upload documents.": "Chọn client để xem hoặc tải tài liệu lên.",
+  "Client documents": "Tài liệu của client",
+  "Loading files...": "Đang tải file...",
+  "Could not load files. Please try again.": "Chưa tải được danh sách file. Vui lòng thử lại.",
+  "No files yet.": "Chưa có file.",
+  "You can only delete files you added.": "Bạn chỉ có thể xóa file do mình thêm.",
+  "Delete this client? Their files will no longer appear in this directory.": "Xóa client này? Các file của client sẽ không còn hiển thị trong danh bạ.",
+  "Could not upload {{name}}. Please try again.": "Chưa tải lên được {{name}}. Vui lòng thử lại.",
+  "Uploaded {{count}} files.": "Đã tải lên {{count}} file.",
+  "{{name}}: choose a PDF or XLSX file up to 5 MB.": "{{name}}: chỉ nhận file PDF hoặc XLSX, tối đa 5 MB.",
+  "PDF or XLSX · Up to 5 MB per file": "PDF hoặc XLSX · Tối đa 5 MB mỗi file",
+  "Uploading files...": "Đang tải file lên...",
+  "Retry upload": "Thử tải lên lại",
+  "Please sign in again to upload files.": "Vui lòng đăng nhập lại để tải file lên.",
+  "Please choose a PDF or XLSX file up to 5 MB.": "Vui lòng chọn file PDF hoặc XLSX, tối đa 5 MB.",
+  "Could not upload the file. Please try again.": "Chưa tải file lên được. Vui lòng thử lại.",
+
   "Delete file?": "Xóa file?",
   "{{name}} will be permanently deleted. This cannot be undone.": "{{name}} sẽ bị xóa vĩnh viễn. Không thể hoàn tác.",
   "Client deleted.": "Đã xóa client.",

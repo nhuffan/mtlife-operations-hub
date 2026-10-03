@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Loader2, X, Search, Pencil, Trash2, FileText, FileSpreadsheet } from "lucide-react";
+import { Download, Loader2, X, Search, Pencil, Trash2, FileText, FileSpreadsheet, UploadCloud } from "lucide-react";
 import { supabase } from "@/lib/integrations/supabase/client";
 import { toast } from "sonner";
 import { deleteReconciliationClient, updateReconciliationClient, type ReconciliationClient, type ReconciliationClientInput } from "@/lib/features/reconciliation/clients";
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-import { deleteReconciliationExport, listReconciliationExports, type ReconciliationExport } from "@/lib/features/reconciliation/exports";
+import { deleteReconciliationExport, listReconciliationExports, uploadClientFile, type PendingClientFile, type ReconciliationExport } from "@/lib/features/reconciliation/exports";
 
 const CLIENT_PLACEHOLDERS: Record<keyof ReconciliationClientInput, string> = {
   name: "Example: ABC Company",
@@ -21,10 +21,9 @@ const CLIENT_PLACEHOLDERS: Record<keyof ReconciliationClientInput, string> = {
   account: "Example: 63318886886", bankName: "Enter bank name...",
 };
 
-export default function ExportHistory({ revision, open, onOpenChange, clients, onClientsChanged }: {
+export default function ExportHistory({ open, onOpenChange, clients, onClientsChanged }: {
   clients: ReconciliationClient[];
   onClientsChanged: () => Promise<void>;
-  revision: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -41,6 +40,54 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
   const [search, setSearch] = useState("");
   const [editor, setEditor] = useState<{ id: string; form: ReconciliationClientInput } | null>(null);
   const [saving, setSaving] = useState(false);
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const uploadLock = useRef(false);
+  const [uploading, setUploading] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<PendingClientFile[]>([]);
+
+  async function saveFiles(files: PendingClientFile[]) {
+    if (uploadLock.current || !files.length) return;
+    uploadLock.current = true;
+    setUploading(true);
+    let saved = 0;
+    try {
+      for (const file of files) {
+        try {
+          await uploadClientFile(file);
+          saved++;
+          setPendingFiles((current) => current.filter((item) => item.id !== file.id));
+        } catch {
+          toast.error(t("Could not upload {{name}}. Please try again.", { name: file.file_name }));
+        }
+      }
+      if (saved) {
+        toast.success(t("Uploaded {{count}} files.", { count: saved }));
+        await refresh(true);
+      }
+    } finally {
+      uploadLock.current = false;
+      setUploading(false);
+    }
+  }
+
+  async function addFiles(files: File[]) {
+    if (!selectedClient || uploadLock.current || deletingFile || saving) return;
+    const accepted: PendingClientFile[] = [];
+    for (const file of files) {
+      if (!/\.(pdf|xlsx)$/i.test(file.name) || !file.size || file.size > 5 * 1024 * 1024) {
+        toast.error(t("{{name}}: choose a PDF or XLSX file up to 5 MB.", { name: file.name }));
+        continue;
+      }
+      if ([...pendingFiles, ...accepted].some((item) => item.client_id === selectedClient.id && item.file_name === file.name && item.file_size === file.size)) continue;
+      accepted.push({
+        id: crypto.randomUUID(), created_at: new Date().toISOString(), client_id: selectedClient.id,
+        client_name: selectedClient.name, period_label: "", source_file_name: file.name,
+        file_name: file.name, file_size: file.size, file_format: /\.pdf$/i.test(file.name) ? "pdf" : "excel", blob: file,
+      });
+    }
+    setPendingFiles((current) => [...current, ...accepted]);
+    await saveFiles(accepted);
+  }
 
   const originalClient = clients.find((client) => client.id === editor?.id);
   const hasClientChanges = Boolean(editor && originalClient &&
@@ -78,7 +125,7 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
       await refresh();
     } catch (error) {
       const message = error instanceof Error && [
-        "Please sign in again to delete this file.", "You can only delete files you exported.",
+        "Please sign in again to delete this file.", "You can only delete files you added.",
         "Could not finish deleting the file. Please retry.",
       ].includes(error.message) ? error.message : "Could not delete the file. Please try again.";
       toast.error(t(message));
@@ -108,7 +155,7 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
     `${client.name} ${client.taxCode}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
   );
   function selectClient(id: string | null) {
-    if (saving || id === clientId) return;
+    if (saving || uploadLock.current || id === clientId) return;
     setEditor(null);
     setLoading(true);
     setSelection({ clientId: id, page: 0 });
@@ -124,35 +171,38 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
   const moreLock = useRef(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreFailed, setMoreFailed] = useState(false);
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (silent = false) => {
     const version = ++request.current;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setFailed(false);
     setMoreFailed(false);
     setLoadingMore(false);
     moreLock.current = false;
     nextPage.current = 1;
-    scrollRoot.current?.scrollTo({ top: 0 });
+    if (!silent) scrollRoot.current?.scrollTo({ top: 0 });
     try {
       const result = clientId ? await listReconciliationExports(0, clientId) : { rows: [], count: 0 };
       if (version !== request.current) return;
       setRows(result.rows);
       setCount(result.count);
     } catch {
-      if (version === request.current) setFailed(true);
+      if (version === request.current) {
+        if (silent) toast.error(t("Could not load files. Please try again."));
+        else setFailed(true);
+      }
     } finally {
       if (version === request.current) setLoading(false);
     }
-  }, [clientId]);
+  }, [clientId, t]);
   useEffect(() => {
     if (!open) return;
     void refresh();
     const version = request.current;
     return () => { request.current = version + 1; };
-  }, [refresh, revision, open]);
+  }, [refresh, open]);
 
   const loadMore = useCallback(async () => {
-    if (!clientId || moreLock.current || loading || failed || rows.length >= count) return;
+    if (!clientId || uploadLock.current || moreLock.current || loading || failed || rows.length >= count) return;
     moreLock.current = true;
     const version = request.current;
     setLoadingMore(true);
@@ -174,13 +224,13 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
   }, [clientId, loading, failed, rows, count]);
 
   useEffect(() => {
-    if (!open || loading || loadingMore || moreFailed || !sentinel.current || !scrollRoot.current) return;
+    if (!open || uploading || loading || loadingMore || moreFailed || !sentinel.current || !scrollRoot.current) return;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) void loadMore();
     }, { root: scrollRoot.current, rootMargin: "120px" });
     observer.observe(sentinel.current);
     return () => observer.disconnect();
-  }, [open, loading, loadingMore, moreFailed, loadMore]);
+  }, [open, uploading, loading, loadingMore, moreFailed, loadMore]);
 
   async function download(item: ReconciliationExport) {
     setDownloading(item.id);
@@ -203,12 +253,12 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
   }
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => { if (!saving && !deletingFile) { setEditor(null); onOpenChange(nextOpen); } }}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!saving && !deletingFile && !uploading) { setEditor(null); onOpenChange(nextOpen); } }}>
       <DialogContent showCloseButton={false} className="h-[720px] max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:max-w-5xl [&_button:not(:disabled)]:cursor-pointer [&_button:disabled]:cursor-not-allowed">
       <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
         <DialogHeader className="text-left">
           <DialogTitle>{t("Client directory")}</DialogTitle>
-          <DialogDescription>{t("View client details and SOA files.")}</DialogDescription>
+          <DialogDescription>{t("View client details and manage their documents.")}</DialogDescription>
         </DialogHeader>
         <div className="flex shrink-0 items-center gap-2">
         <DialogClose asChild>
@@ -226,7 +276,7 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
           </div>
           <nav aria-label={t("Client folders")} className="flex max-h-36 gap-1 overflow-auto px-3 pb-3 sm:max-h-none sm:flex-1 sm:flex-col">
             {visibleClients.map((client) => (
-              <button key={client.id} type="button" disabled={saving} onClick={() => selectClient(client.id)} aria-pressed={clientId === client.id}
+              <button key={client.id} type="button" disabled={saving || uploading} onClick={() => selectClient(client.id)} aria-pressed={clientId === client.id}
                 className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-lg p-3 text-left text-sm sm:shrink ${clientId === client.id ? "bg-primary/10 text-primary ring-1 ring-inset ring-primary/20" : "hover:bg-muted"}`}>
                 <span className="min-w-0 w-full"><span className="line-clamp-2 break-words font-medium">{client.name}</span><span className="block truncate text-xs text-muted-foreground">{client.taxCode}</span></span>
               </button>
@@ -242,8 +292,8 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
 
                 </div>
                 {selectedClient && !editor && <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setEditor({ id: selectedClient.id, form: { name: selectedClient.name, address: selectedClient.address, taxCode: selectedClient.taxCode, tel: selectedClient.tel, email: selectedClient.email, beneficiaryName: selectedClient.beneficiaryName, account: selectedClient.account, bankName: selectedClient.bankName } })}><Pencil />{t("Edit client")}</Button>
-                  <Button size="icon" variant="ghost" className="text-destructive" aria-label={t("Delete client?")} onClick={() => setDeleteTarget(selectedClient)}><Trash2 /></Button>
+                  <Button size="sm" variant="outline" disabled={uploading} onClick={() => setEditor({ id: selectedClient.id, form: { name: selectedClient.name, address: selectedClient.address, taxCode: selectedClient.taxCode, tel: selectedClient.tel, email: selectedClient.email, beneficiaryName: selectedClient.beneficiaryName, account: selectedClient.account, bankName: selectedClient.bankName } })}><Pencil />{t("Edit client")}</Button>
+                  <Button size="icon" variant="ghost" className="text-destructive" aria-label={t("Delete client?")} disabled={uploading} onClick={() => setDeleteTarget(selectedClient)}><Trash2 /></Button>
                 </div>}
               </div>
                   {editor ? <Input className="mt-3 w-full shadow-none" form="client-inline-edit" aria-label={t("Client name")} placeholder={t(CLIENT_PLACEHOLDERS.name)} required disabled={saving}
@@ -275,18 +325,40 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
                     </Button>
                   </div>}
                 </form>
-              ) : <p className="mt-2 text-sm text-muted-foreground">{t("Select a client to view their exported SOAs.")}</p>}
+              ) : <p className="mt-2 text-sm text-muted-foreground">{t("Select a client to view or upload documents.")}</p>}
             </div>
-            <div className="shrink-0 border-b px-5 py-3"><h3 className="text-sm font-semibold">{t("Exported files")}{!loading && !failed ? ` (${count})` : ""}</h3></div>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+              <div>
+                <h3 className="text-sm font-semibold">{t("Reconciled files")}{!loading && !failed ? ` (${count})` : ""}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">{t("PDF or XLSX · Up to 5 MB per file")}</p>
+              </div>
+              {selectedClient && <Button type="button" size="sm" variant="outline"
+                disabled={uploading || deletingFile || saving || loading || loadingMore || downloading !== null}
+                onClick={() => uploadInput.current?.click()} aria-busy={uploading}>
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                {t(uploading ? "Uploading files..." : "Upload files")}
+              </Button>}
+            </div>
       <div>
-      {loading ? <div role="status" aria-label={t("Loading exported files...")} className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-        : failed ? <div role="alert" className="space-y-2 p-5 text-sm text-destructive"><p>{t("Could not load exported files.")}</p><Button variant="outline" onClick={() => void refresh()}>{t("Retry loading files")}</Button></div>
-        : !rows.length ? <p className="p-5 text-sm text-muted-foreground">{t("No exported files yet.")}</p>
-        : <div className="space-y-3 p-5">{rows.map((item) => (
+        <input ref={uploadInput} type="file" className="hidden" accept=".pdf,.xlsx" multiple
+          onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void addFiles(files); }} />
+        {selectedClient && !uploading && <div className="space-y-3 px-5">
+          {pendingFiles.filter((file) => file.client_id === clientId).map((file) => <div key={file.id} className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+            <span className="min-w-0 flex-1 truncate" title={file.file_name}>{file.file_name}</span>
+            <>
+              <Button variant="outline" size="sm" disabled={loading || loadingMore || deletingFile || downloading !== null} onClick={() => void saveFiles([file])}>{t("Retry upload")}</Button>
+              {!file.asset && <Button variant="ghost" size="icon" aria-label={t("Remove file")} onClick={() => setPendingFiles((current) => current.filter((item) => item.id !== file.id))}><X className="h-4 w-4" /></Button>}
+            </>
+          </div>)}
+        </div>}
+      {loading ? <div role="status" aria-label={t("Loading files...")} className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        : failed ? <div role="alert" className="space-y-2 px-5 text-sm text-destructive"><p>{t("Could not load files. Please try again.")}</p><Button variant="outline" disabled={uploading} onClick={() => void refresh()}>{t("Retry loading files")}</Button></div>
+        : !rows.length ? <p className="px-5 text-sm text-muted-foreground">{t("No files yet.")}</p>
+        : <div className="space-y-3 px-5">{rows.map((item) => (
           <div key={item.id} className="relative">
           <button type="button"
             className={`${attachmentCardClass} ${interactiveCardClass} !pr-20 dark:bg-muted/10 dark:hover:bg-muted/30 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60`}
-            onClick={() => void download(item)} disabled={downloading !== null || deletingFile}
+            onClick={() => void download(item)} disabled={downloading !== null || deletingFile || uploading}
             aria-label={t("Download {{name}}", { name: item.file_name })}
             aria-busy={downloading === item.id} title={item.file_name}>
             <span aria-hidden="true" className={`flex h-11 w-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg ${item.file_format === "pdf" ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"}`}>
@@ -295,22 +367,22 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
             </span>
             <span className="min-w-0 flex-1 overflow-hidden">
               <span className="block truncate text-sm font-medium text-foreground">{item.file_name}</span>
-              <span className="mt-1 block truncate text-xs text-muted-foreground">{item.period_label} · {formatFileSize(item.file_size)} · {new Date(item.created_at).toLocaleString(locale)}</span>
+              <span className="mt-1 block truncate text-xs text-muted-foreground">{item.period_label ? `${item.period_label} · ` : ""}{formatFileSize(item.file_size)} · {new Date(item.created_at).toLocaleString(locale)}</span>
             </span>
             <span aria-hidden="true" className="absolute right-12 top-1/2 -translate-y-1/2 text-muted-foreground group-hover:text-foreground">
               {downloading === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             </span>
           </button>
           {userId && item.created_by === userId && <button type="button" className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            disabled={deletingFile || downloading !== null} onClick={() => setFileDeleteTarget(item)}
+            disabled={deletingFile || uploading || downloading !== null} onClick={() => setFileDeleteTarget(item)}
             aria-label={t("Delete {{name}}", { name: item.file_name })} title={t("Delete {{name}}", { name: item.file_name })}>
             <Trash2 className="h-4 w-4" />
           </button>}
           </div>
         ))}</div>}
-        {!loading && !failed && rows.length < count && (
+        {!uploading && !loading && !failed && rows.length < count && (
           <div ref={sentinel} className="flex min-h-10 items-center justify-center px-5 pb-4">
-            {loadingMore ? <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label={t("Loading exported files...")} /> : moreFailed ? (
+            {loadingMore ? <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label={t("Loading files...")} /> : moreFailed ? (
               <Button variant="ghost" onClick={() => void loadMore()}>{t("Retry loading files")}</Button>
             ) : null}
           </div>
@@ -324,7 +396,7 @@ export default function ExportHistory({ revision, open, onOpenChange, clients, o
       description={t("{{name}} will be permanently deleted. This cannot be undone.", { name: fileDeleteTarget?.file_name ?? "" })}
       loading={deletingFile} onConfirm={() => void removeFile()} />
     <ConfirmDialog open={deleteTarget !== null} onOpenChange={(nextOpen) => { if (!nextOpen && !deleting) setDeleteTarget(null); }}
-      title={t("Delete client?")} description={t("Delete this client? Their exported files will no longer appear in this directory.")}
+      title={t("Delete client?")} description={t("Delete this client? Their files will no longer appear in this directory.")}
       loading={deleting} onConfirm={() => void removeClient()} />
     </Dialog>
   );

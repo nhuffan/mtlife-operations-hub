@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     // Deletion is idempotent so a lost response can be retried safely.
     if (!record) return NextResponse.json({ success: true });
     if (record.created_by !== user.id) {
-      return NextResponse.json({ error: "You can only delete files you exported." }, { status: 403 });
+      return NextResponse.json({ error: "You can only delete files you added." }, { status: 403 });
     }
     const asset = record.asset;
     if (!asset?.public_id || !["raw", "image", "video"].includes(asset.resource_type)) {
