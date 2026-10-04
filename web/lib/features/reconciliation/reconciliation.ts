@@ -366,7 +366,7 @@ function replaceBankSectionMerges(sheetDocument: XMLDocument, startRow: number) 
     .forEach((merge) => merge.remove());
 
   for (let row = startRow; row < startRow + 3; row++) {
-    [`A${row}:B${row}`, `C${row}:H${row}`].forEach((reference) => {
+    [`A${row}:C${row}`, `D${row}:H${row}`].forEach((reference) => {
       const merge = createXmlElement(sheetDocument, "mergeCell");
       merge.setAttribute("ref", reference);
       mergeCells.appendChild(merge);
@@ -503,6 +503,13 @@ function createVndStyleFactory(stylesDocument: XMLDocument) {
       const clone = base.cloneNode(true) as Element;
       clone.setAttribute("numFmtId", String(numFmtId));
       clone.setAttribute("applyNumberFormat", "1");
+      let alignment = directChild(clone, "alignment");
+      if (!alignment) {
+        alignment = createXmlElement(stylesDocument, "alignment");
+        clone.appendChild(alignment);
+      }
+      alignment.setAttribute("horizontal", "right");
+      clone.setAttribute("applyAlignment", "1");
       cellXfs!.appendChild(clone);
       styleIndex = styles.length;
       styleByBase.set(baseStyle, styleIndex);
@@ -604,7 +611,7 @@ function setWrappedRowHeight(
 }
 
 function setProductRowHeight(row: Element, productName: string) {
-  setWrappedRowHeight(row, estimateWrappedLineCount(productName, 13), 20, 120);
+  setWrappedRowHeight(row, estimateWrappedLineCount(productName, 27), 20, 120);
 }
 
 function matchCellFont(
@@ -631,7 +638,8 @@ function matchCellFont(
 function alignCell(
   stylesDocument: XMLDocument,
   cell: Element,
-  horizontal: "left" | "center" | "right"
+  horizontal: "left" | "center" | "right",
+  wrapText?: boolean
 ) {
   const cellXfs = directChild(stylesDocument.documentElement, "cellXfs");
   if (!cellXfs) throw new Error("The template is missing cell formatting.");
@@ -647,6 +655,7 @@ function alignCell(
     clone.appendChild(alignment);
   }
   alignment.setAttribute("horizontal", horizontal);
+  if (wrapText !== undefined) alignment.setAttribute("wrapText", wrapText ? "1" : "0");
   clone.setAttribute("applyAlignment", "1");
   cellXfs.appendChild(clone);
   cell.setAttribute("s", String(styles.length));
@@ -727,20 +736,38 @@ export async function createStatementOfAccount(
   };
   normalizeRichText(sheetDocument);
   const sharedStringsFile = zip.file("xl/sharedStrings.xml");
+  let sharedStrings: string[] = [];
   if (sharedStringsFile) {
     const sharedStringsDocument = parseXml(await sharedStringsFile.async("string"));
     normalizeRichText(sharedStringsDocument);
+    sharedStrings = Array.from(sharedStringsDocument.getElementsByTagNameNS(XML_NAMESPACE, "si"))
+      .map((item) => Array.from(item.getElementsByTagNameNS(XML_NAMESPACE, "t")).map((text) => text.textContent ?? "").join(""));
     zip.file("xl/sharedStrings.xml", new XMLSerializer().serializeToString(sharedStringsDocument));
   }
+  // Use an explicit yellow for the template's total fill so both Excel and
+  // the PDF renderer preserve the same background (including merged cells).
+  const totalFill = directChild(stylesDocument.documentElement, "fills")?.children[4];
+  const totalPattern = totalFill && directChild(totalFill, "patternFill");
+  if (totalPattern) {
+    totalPattern.setAttribute("patternType", "solid");
+    let foreground = directChild(totalPattern, "fgColor");
+    if (!foreground) {
+      foreground = createXmlElement(stylesDocument, "fgColor");
+      totalPattern.appendChild(foreground);
+    }
+    Array.from(foreground.attributes).forEach((attribute) => foreground!.removeAttribute(attribute.name));
+    foreground.setAttribute("rgb", "FFFFE699");
+  }
+
   const applyVndStyle = createVndStyleFactory(stylesDocument);
   const applyWrapTextStyle = createWrapTextStyleFactory(stylesDocument);
   const applyBorderStyle = createBorderStyleFactory(stylesDocument);
 
-  // The template's original money columns are too narrow for values such as
-  // "1,480,000 ₫", which Excel renders as ##########.
-  setColumnWidth(sheetDocument, 6, 15.5);
-  setColumnWidth(sheetDocument, 7, 14.5);
-  setColumnWidth(sheetDocument, 8, 15.5);
+  // Give product names twice the original template width. Compact identifiers
+  // and stacked bilingual headers leave room without narrowing currency cells
+  // enough for Excel to display ########## on larger amounts.
+  const columnWidths = [5, 20, 21, 16, 27, 15.5, 15, 17];
+  columnWidths.forEach((width, index) => setColumnWidth(sheetDocument, index + 1, width));
 
   const setTextAt = (reference: string, value: string) => {
     const match = reference.match(/^([A-Z]+)(\d+)$/);
@@ -776,35 +803,96 @@ export async function createStatementOfAccount(
   };
   ["F1", "G1", "F2", "G2"].forEach(alignLeftAt);
 
-  const clientFields = [
-    [5, client.name],
-    [6, client.address],
-    [7, client.taxCode],
-    [8, client.tel],
-    [9, client.email],
+  // Keep the party details independent of the narrow transaction columns:
+  // each side is one merged block, with its label inline rather than squeezed
+  // into A or D. This changes only rows 5:9, not the transaction table below.
+  const writePartyText = (cell: Element, label: string, value: string) => {
+    clearCell(cell);
+    cell.setAttribute("t", "inlineStr");
+    const inline = createXmlElement(sheetDocument, "is");
+    const xfs = directChild(stylesDocument.documentElement, "cellXfs")!;
+    const xf = xfs.children[Number(cell.getAttribute("s") ?? 0)];
+    const font = directChild(stylesDocument.documentElement, "fonts")!.children[Number(xf.getAttribute("fontId") ?? 0)];
+    [[`${label} `, true], [value, false]].forEach(([text, isLabel]) => {
+      const run = createXmlElement(sheetDocument, "r");
+      const properties = createXmlElement(sheetDocument, "rPr");
+      if (isLabel) {
+        [["rFont", "Times New Roman"], ["sz", "11"], ["b", "0"]].forEach(([tag, val]) => {
+          const property = createXmlElement(sheetDocument, tag);
+          property.setAttribute("val", val);
+          properties.appendChild(property);
+        });
+        const color = createXmlElement(sheetDocument, "color");
+        color.setAttribute("rgb", "FF000000");
+        properties.appendChild(color);
+      } else {
+        Array.from(font.children).forEach((property) => {
+          if (property.localName === "name") {
+            const family = createXmlElement(sheetDocument, "rFont");
+            family.setAttribute("val", property.getAttribute("val") ?? "Times New Roman");
+            properties.appendChild(family);
+          } else properties.appendChild(sheetDocument.importNode(property, true));
+        });
+      }
+      run.appendChild(properties);
+      const content = createXmlElement(sheetDocument, "t");
+      content.setAttribute("xml:space", "preserve");
+      content.textContent = String(text);
+      run.appendChild(content);
+      inline.appendChild(run);
+    });
+    cell.appendChild(inline);
+  };
+  const partyRows = [
+    [5, "From:", "To:", client.name],
+    [6, "Address:", "Address:", client.address],
+    [7, "Tax code:", "Tax code:", client.taxCode],
+    [8, "Tel:", "Tel:", client.tel],
+    [9, "Email:", "Email:", client.email],
   ] as const;
-  clientFields.forEach(([rowNumber, value]) => {
-    setTextAt(`E${rowNumber}`, value);
+  const partyMerges = sheetDocument.getElementsByTagNameNS(XML_NAMESPACE, "mergeCells")[0];
+  if (!partyMerges) throw new Error("The template is missing its merged-cell definitions.");
+  Array.from(partyMerges.children).filter((merge) => {
+    const rowNumber = Number(merge.getAttribute("ref")?.match(/\d+/)?.[0] ?? 0);
+    return rowNumber >= 5 && rowNumber <= 9;
+  }).forEach((merge) => merge.remove());
+  partyRows.forEach(([rowNumber, senderLabel, recipientLabel, recipientValue]) => {
     const row = getRow(sheetDocument, rowNumber);
-    if (!row) return;
-    const cell = ensureCell(sheetDocument, row, "E");
-    if (rowNumber === 6 || rowNumber === 7) {
-      matchCellFont(stylesDocument, cell, ensureCell(sheetDocument, row, "B"));
-    }
-    alignCell(stylesDocument, cell, "left");
-    if (rowNumber === 6) {
+    if (!row) throw new Error("The template is missing its required data region.");
+    const senderSource = ensureCell(sheetDocument, row, "B");
+    const senderValue = senderSource.getAttribute("t") === "s"
+      ? sharedStrings[Number(directChild(senderSource, "v")?.textContent ?? 0)] ?? ""
+      : Array.from(senderSource.getElementsByTagNameNS(XML_NAMESPACE, "t")).map((text) => text.textContent ?? "").join("");
+    const senderCell = ensureCell(sheetDocument, row, "A");
+    const recipientCell = ensureCell(sheetDocument, row, "E");
+    matchCellFont(stylesDocument, senderCell, senderSource);
+    matchCellFont(stylesDocument, recipientCell, senderSource);
+    ["A", "B", "C", "D", "E", "F", "G", "H"].forEach((column) => clearCell(ensureCell(sheetDocument, row, column)));
+    const senderText = `${senderLabel} ${senderValue}`;
+    const recipientText = `${recipientLabel} ${recipientValue}`;
+    writePartyText(senderCell, senderLabel, senderValue);
+    writePartyText(recipientCell, recipientLabel, recipientValue);
+    [senderCell, recipientCell].forEach((cell) => {
       applyWrapTextStyle(cell);
-      setWrappedRowHeight(row, estimateWrappedLineCount(value, 52), 20, 409);
-    }
+      alignCell(stylesDocument, cell, "left");
+    });
+    ["A", "E"].forEach((column) => applyBorderStyle(ensureCell(sheetDocument, row, column), 2));
+    ["B", "C", "F", "G"].forEach((column) => applyBorderStyle(ensureCell(sheetDocument, row, column), 10));
+    ["D", "H"].forEach((column) => applyBorderStyle(ensureCell(sheetDocument, row, column), 3));
+    [`A${rowNumber}:D${rowNumber}`, `E${rowNumber}:H${rowNumber}`].forEach((reference) => {
+      const merge = createXmlElement(sheetDocument, "mergeCell");
+      merge.setAttribute("ref", reference);
+      partyMerges.appendChild(merge);
+    });
+    setWrappedRowHeight(row, Math.max(
+      estimateWrappedLineCount(senderText, columnWidths.slice(0, 4).reduce((sum, width) => sum + width, 0)),
+      estimateWrappedLineCount(recipientText, columnWidths.slice(4).reduce((sum, width) => sum + width, 0))
+    ), 24, 409);
   });
-
-  const companyRow = getRow(sheetDocument, 5);
-  if (companyRow) {
-    const fromCell = ensureCell(sheetDocument, companyRow, "B");
-    const toCell = ensureCell(sheetDocument, companyRow, "E");
-    matchCellFont(stylesDocument, toCell, fromCell);
-    alignCell(stylesDocument, toCell, "left");
-  }
+  partyMerges.setAttribute("count", String(partyMerges.children.length));
+  Array.from(sheetDocument.getElementsByTagNameNS(XML_NAMESPACE, "hyperlink")).forEach((link) => {
+    if (link.getAttribute("ref") === "B9") link.setAttribute("ref", "A9");
+  });
 
   const bankStartRow = 25 + extraRows;
   replaceBankSectionMerges(sheetDocument, bankStartRow);
@@ -833,44 +921,50 @@ export async function createStatementOfAccount(
   bankFields.forEach(([label, value], index) => {
     const rowNumber = bankStartRow + index;
     setTextAt(`A${rowNumber}`, label);
-    setTextAt(`C${rowNumber}`, value);
+    setTextAt(`D${rowNumber}`, value.replace(/\r?\n/g, " "));
     const row = getRow(sheetDocument, rowNumber);
     if (!row) return;
     const labelCell = ensureCell(sheetDocument, row, "A");
-    const valueCell = ensureCell(sheetDocument, row, "C");
-    alignCell(stylesDocument, labelCell, "left");
-    alignCell(stylesDocument, valueCell, "left");
-    applyWrapTextStyle(labelCell);
-    applyWrapTextStyle(valueCell);
-    // Each bank row contains two merged cells: A:B and C:H. Apply the
-    // template's thin borders to every perimeter cell so Excel and print
-    // previews retain a complete outline around both merged regions.
+    const valueCell = ensureCell(sheetDocument, row, "D");
+    alignCell(stylesDocument, labelCell, "left", false);
+    alignCell(stylesDocument, valueCell, "left", false);
+    // Single-line bank details: the label spans A:C and its value spans D:H.
     applyBorderStyle(labelCell, 2);
-    applyBorderStyle(ensureCell(sheetDocument, row, "B"), 3);
+    applyBorderStyle(ensureCell(sheetDocument, row, "B"), 10);
+    applyBorderStyle(ensureCell(sheetDocument, row, "C"), 3);
     applyBorderStyle(valueCell, 2);
-    ["D", "E", "F", "G"].forEach((column) =>
+    ["E", "F", "G"].forEach((column) =>
       applyBorderStyle(ensureCell(sheetDocument, row, column), 10)
     );
     applyBorderStyle(ensureCell(sheetDocument, row, "H"), 3);
-    setWrappedRowHeight(
-      row,
-      Math.max(
-        estimateWrappedLineCount(label, 31),
-        estimateWrappedLineCount(value, 88)
-      ),
-      24,
-      409
-    );
+    row.setAttribute("ht", "24");
+    row.setAttribute("customHeight", "1");
   });
 
   setTextAt("A10", `STATEMENT OF ACCOUNT FOR ${data.monthLabel} (DISBURSEMENT NOTE)`);
   setTextAt("A11", `${data.monthLabel} 月份对账单`);
-  setTextAt(
-    "G12",
-    data.serviceFeeRate === null
-      ? "Phí dịch vụ/服务费"
-      : `Phí dịch vụ/服务费 ${data.serviceFeeRate}%`
-  );
+  const feeRate = data.serviceFeeRate === null ? "" : ` ${data.serviceFeeRate}%`;
+  const columnHeaders = [
+    ["A", "STT\n序号"],
+    ["B", "Thời gian đối soát\n对账时间"],
+    ["C", "Mã Combo-Voucher\n美团点评订单号"],
+    ["D", "Mã sản phẩm\n产品编号"],
+    ["E", "Tên sản phẩm\n产品名称"],
+    ["F", "Giá combo\n套餐价格"],
+    ["G", `Phí dịch vụ\n服务费${feeRate}`],
+    ["H", "Tiền đối soát\n对账金额"],
+  ] as const;
+  const headerRow = getRow(sheetDocument, 12);
+  if (!headerRow) throw new Error("The template is missing its required data region.");
+  columnHeaders.forEach(([column, label]) => {
+    setTextAt(`${column}12`, label);
+    const cell = ensureCell(sheetDocument, headerRow, column);
+    applyWrapTextStyle(cell);
+    alignCell(stylesDocument, cell, ["F", "G", "H"].includes(column) ? "right" : "center");
+    applyBorderStyle(cell, 1);
+  });
+  headerRow.setAttribute("ht", "36");
+  headerRow.setAttribute("customHeight", "1");
 
   const reservedRows = Math.max(TEMPLATE_DATA_ROWS, data.rows.length);
   for (let index = 0; index < reservedRows; index++) {
@@ -891,6 +985,8 @@ export async function createStatementOfAccount(
     setNumber(sheetDocument, cells[0], index + 1);
     setInlineString(sheetDocument, cells[1], source.reconciledAt);
     setInlineString(sheetDocument, cells[2], source.orderId);
+    alignCell(stylesDocument, cells[1], "center");
+    alignCell(stylesDocument, cells[2], "center");
     setInlineString(sheetDocument, cells[3], source.productId);
     setInlineString(sheetDocument, cells[4], source.productName);
     applyWrapTextStyle(cells[4]);
@@ -926,6 +1022,41 @@ export async function createStatementOfAccount(
   ["F", "G", "H"].forEach((column) =>
     applyBorderStyle(ensureCell(sheetDocument, totalRow, column), 1)
   );
+
+  // The blank separator is outside both outlined sections. Remove inherited
+  // borders so it does not connect the total row to the beneficiary box.
+  const separatorRow = getRow(sheetDocument, totalRowNumber + 1);
+  if (separatorRow) {
+    ["A", "B", "C", "D", "E", "F", "G", "H"].forEach((column) =>
+      applyBorderStyle(ensureCell(sheetDocument, separatorRow, column), 0)
+    );
+  }
+
+  // An image must retain its extent when worksheet column widths change.
+  // oneCellAnchor stores a fixed cx/cy instead of deriving size from two cells.
+  const drawingFile = zip.file("xl/drawings/drawing1.xml");
+  if (drawingFile) {
+    const drawing = parseXml(await drawingFile.async("string"));
+    const drawingNamespace = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
+    Array.from(drawing.getElementsByTagNameNS(drawingNamespace, "twoCellAnchor")).forEach((anchor) => {
+      const picture = directChild(anchor, "pic");
+      const transform = picture?.getElementsByTagNameNS("http://schemas.openxmlformats.org/drawingml/2006/main", "xfrm")[0];
+      const extent = transform && directChild(transform, "ext");
+      const from = directChild(anchor, "from");
+      if (!picture || !extent || !from) return;
+      const fixed = drawing.createElementNS(drawingNamespace, "xdr:oneCellAnchor");
+      fixed.appendChild(from.cloneNode(true));
+      const size = drawing.createElementNS(drawingNamespace, "xdr:ext");
+      size.setAttribute("cx", extent.getAttribute("cx")!);
+      size.setAttribute("cy", extent.getAttribute("cy")!);
+      fixed.appendChild(size);
+      fixed.appendChild(picture.cloneNode(true));
+      const clientData = directChild(anchor, "clientData");
+      if (clientData) fixed.appendChild(clientData.cloneNode(true));
+      anchor.replaceWith(fixed);
+    });
+    zip.file("xl/drawings/drawing1.xml", new XMLSerializer().serializeToString(drawing));
+  }
 
   const serializer = new XMLSerializer();
   zip.file("xl/worksheets/sheet1.xml", serializer.serializeToString(sheetDocument));

@@ -82,7 +82,19 @@ export async function createStatementPdf(output: { blob: Blob; fileName: string 
     const family = child(font, "name")?.getAttribute("val") ?? "Times New Roman";
     const fontCss = `${child(font, "i") ? "italic " : ""}${child(font, "b") ? "bold " : ""}${size}px "${family.replace(/["\\]/g, "")}", "Noto Serif CJK SC", serif`;
     const alignment = child(style, "alignment");
-    return { style, font, size, fontCss, alignment };
+    const richRuns = elements(node ?? sheetXml.createElement("empty"), "r").map((run) => {
+      const properties = child(run, "rPr");
+      const bold = child(properties, "b");
+      const italic = child(properties, "i");
+      const runSize = attrNumber(child(properties, "sz"), "val", size * 3 / 4) * 4 / 3;
+      const runFamily = child(properties, "rFont")?.getAttribute("val") ?? family;
+      return {
+        text: child(run, "t")?.textContent ?? "",
+        fontCss: `${italic && italic.getAttribute("val") !== "0" ? "italic " : ""}${bold && bold.getAttribute("val") !== "0" ? "bold " : ""}${runSize}px "${runFamily.replace(/["\\]/g, "")}", "Noto Serif CJK SC", serif`,
+        color: color(child(properties, "color"), "#000000"),
+      };
+    });
+    return { style, font, size, fontCss, alignment, richRuns };
   }
   function textAt(r: number, c: number) {
     const cell = sheet[XLSX.utils.encode_cell({ r, c })];
@@ -118,14 +130,13 @@ export async function createStatementPdf(output: { blob: Blob; fileName: string 
     ctx!.font = style.fontCss;
     let end = Math.min(merge?.e.c ?? c, 7);
     const text = textAt(r, c);
-    const singleLineLabel = c === 0 && text.includes("Beneficiary Account");
-    const wrapped = !singleLineLabel && style.alignment?.getAttribute("wrapText") === "1";
+    const wrapped = style.alignment?.getAttribute("wrapText") === "1";
     // Preserve Excel's overflow for unmerged labels and the No/Date fields.
     if (!merge && !wrapped && sheet[XLSX.utils.encode_cell({ r, c })]?.t !== "n") {
       while (end < 7 && !textAt(r, end + 1) && !merges.some((m) => m.s.r <= r && m.e.r >= r && m.s.c <= end + 1 && m.e.c >= end + 1)) end++;
     }
     const width = xPositions[end + 1] - xPositions[c];
-    return { ...style, width, lines: wrapped ? wrap(text, width - 8) : text.split(/\r?\n/), merge };
+    return { ...style, width, lines: wrapped && r !== 11 ? wrap(text, width - 8) : text.split(/\r?\n/), merge };
   }
   // Increase only wrapped rows when the source's estimated height is too small.
   for (let r = 0; r <= lastRow; r++) {
@@ -145,7 +156,7 @@ export async function createStatementPdf(output: { blob: Blob; fileName: string 
   const drawingPath = "xl/drawings/drawing1.xml";
   if (zip.file(drawingPath)) {
     const [drawing, relationships] = await Promise.all([readXml(drawingPath), readXml("xl/drawings/_rels/drawing1.xml.rels")]);
-    for (const anchor of elements(drawing, "twoCellAnchor")) {
+    for (const anchor of [...elements(drawing, "twoCellAnchor"), ...elements(drawing, "oneCellAnchor")]) {
       const blip = elements(anchor, "blip")[0];
       const id = blip?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "embed");
       const relationship = elements(relationships, "Relationship").find((node) => node.getAttribute("Id") === id);
@@ -274,10 +285,39 @@ export async function createStatementPdf(output: { blob: Blob; fileName: string 
           const vertical = layout.alignment?.getAttribute("vertical") ?? "bottom";
           const textHeight = layout.lines.length * lineHeight;
           const inset = vertical === "center" ? Math.max(3, (heights[item.row] - textHeight) / 2) : vertical === "top" ? 3 : Math.max(3, heights[item.row] - textHeight - 3);
+          let textOffset = 0;
+          const fullText = layout.richRuns.map((run) => run.text).join("");
           layout.lines.forEach((line, index) => {
-            const measured = Math.min(ctx.measureText(line).width, layout.width - 8);
-            const x = xPositions[c] + (align === "center" ? (layout.width - measured) / 2 : align === "right" ? layout.width - measured - 4 : 4);
-            ctx.fillText(line, x, item.y - item.offset + inset + index * lineHeight, layout.width - 8);
+            if (!layout.richRuns.length) {
+              const measured = Math.min(ctx.measureText(line).width, layout.width - 8);
+              const x = xPositions[c] + (align === "center" ? (layout.width - measured) / 2 : align === "right" ? layout.width - measured - 4 : 4);
+              ctx.fillText(line, x, item.y - item.offset + inset + index * lineHeight, layout.width - 8);
+              return;
+            }
+            const start = Math.max(textOffset, fullText.indexOf(line, textOffset));
+            const end = start + line.length;
+            textOffset = end;
+            let offset = 0;
+            const segments = layout.richRuns.map((run) => {
+              const text = run.text.slice(Math.max(0, start - offset), Math.max(0, Math.min(run.text.length, end - offset)));
+              offset += run.text.length;
+              ctx.font = run.fontCss;
+              return { ...run, text, width: ctx.measureText(text).width };
+            });
+            const width = segments.reduce((sum, run) => sum + run.width, 0);
+            const fit = Math.min(1, (layout.width - 8) / Math.max(1, width));
+            const x = xPositions[c] + (align === "center" ? (layout.width - width * fit) / 2 : align === "right" ? layout.width - width * fit - 4 : 4);
+            ctx.save();
+            ctx.translate(x, item.y - item.offset + inset + index * lineHeight);
+            ctx.scale(fit, 1);
+            let runX = 0;
+            segments.forEach((run) => {
+              ctx.font = run.fontCss;
+              ctx.fillStyle = run.color;
+              ctx.fillText(run.text, runX, 0);
+              runX += run.width;
+            });
+            ctx.restore();
           });
           ctx.restore();
         }
