@@ -10,6 +10,7 @@ export interface ReconciliationClient {
   beneficiaryName: string;
   account: string;
   bankName: string;
+  periodDays: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +36,7 @@ interface ReconciliationClientRow {
   beneficiary_name: string | null;
   account: string | null;
   bank_name: string | null;
+  period_days: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -50,6 +52,7 @@ function mapClient(row: ReconciliationClientRow): ReconciliationClient {
     beneficiaryName: row.beneficiary_name ?? "",
     account: row.account ?? "",
     bankName: row.bank_name ?? "",
+    periodDays: row.period_days ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -69,7 +72,7 @@ function cleanInput(input: ReconciliationClientInput) {
 }
 
 const CLIENT_COLUMNS =
-  "id, name, address, tax_code, tel, email, beneficiary_name, account, bank_name, created_at, updated_at";
+  "id, name, address, tax_code, tel, email, beneficiary_name, account, bank_name, period_days, created_at, updated_at";
 
 export async function listReconciliationClients() {
   const { data, error } = await supabase
@@ -110,4 +113,16 @@ export async function updateReconciliationClient(
 export async function deleteReconciliationClient(id: string) {
   const { error } = await supabase.from("reconciliation_clients").delete().eq("id", id);
   if (error) throw error;
+}
+
+export async function saveReconciliationClientPeriod(id: string, days: number) {
+  if (!Number.isInteger(days) || days < 1) throw new Error("Invalid SOA period.");
+  const { data, error } = await supabase
+    .from("reconciliation_clients")
+    .update({ period_days: days, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select(CLIENT_COLUMNS)
+    .single();
+  if (error) throw error;
+  return mapClient(data as ReconciliationClientRow);
 }

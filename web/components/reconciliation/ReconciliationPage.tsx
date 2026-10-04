@@ -5,7 +5,6 @@ import {
   AlertCircle,
   Building2,
   Check,
-  CheckCircle2,
   ChevronsUpDown,
   Download,
   ChevronDown,
@@ -32,6 +31,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import ClientSourceDialog from "@/components/reconciliation/ClientSourceDialog";
 import {
   listReconciliationClients,
+  saveReconciliationClientPeriod,
   type ReconciliationClient,
 } from "@/lib/features/reconciliation/clients";
 import {
@@ -47,6 +47,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { DatePickerDMY } from "@/components/ui/date-picker-dmy";
+import { defaultClientPeriod, periodDays, periodStartDate } from "@/lib/features/reconciliation/period";
+
 import ExportHistory from "@/components/reconciliation/ExportHistory";
 
 const TEMPLATE_URL = "/templates/soa-mt-life-monthly.xlsx";
@@ -55,7 +58,16 @@ type ReconciliationBatchItem = {
   id: string;
   data: ReconciliationData;
   clientId: string;
+  periodStart: string;
+  periodEnd: string;
+  savedPeriodStart: string;
+  savedPeriodEnd: string;
 };
+
+function initialClientPeriod(days?: number | null) {
+  const period = defaultClientPeriod(days);
+  return { ...period, savedPeriodStart: period.periodStart, savedPeriodEnd: period.periodEnd };
+}
 
 function fileKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -115,6 +127,8 @@ export default function ReconciliationPage() {
   const [exporting, setExporting] = useState(false);
   const [exportHistoryOpen, setExportHistoryOpen] = useState(false);
   const exportLock = useRef(false);
+  const periodSaveLock = useRef(false);
+  const [savingPeriod, setSavingPeriod] = useState(false);
   const [clients, setClients] = useState<ReconciliationClient[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
@@ -134,6 +148,16 @@ export default function ReconciliationPage() {
   const incompleteCount = items.filter(
     (item) => !clients.some((client) => client.id === item.clientId)
   ).length;
+
+  const invalidPeriodCount = items.filter((item) => periodDays(item.periodStart, item.periodEnd) === null).length;
+  const activePeriodDays = activeItem ? periodDays(activeItem.periodStart, activeItem.periodEnd) : null;
+
+  const canSavePeriod = Boolean(selectedClient && activeItem && activePeriodDays !== null && (
+    selectedClient.periodDays === null ||
+    activeItem.periodStart !== activeItem.savedPeriodStart ||
+    activeItem.periodEnd !== activeItem.savedPeriodEnd ||
+    activePeriodDays !== selectedClient.periodDays
+  ));
 
   const refreshClients = useCallback(async () => {
     setClientsLoading(true);
@@ -188,7 +212,10 @@ export default function ReconciliationPage() {
           const matchingClient = clients.find(
             (client) => client.name.trim().toLowerCase() === merchantName
           );
-          nextItems.push({ id, data: parsed, clientId: matchingClient?.id ?? "" });
+          nextItems.push({
+            id, data: parsed, clientId: matchingClient?.id ?? "",
+            ...initialClientPeriod(matchingClient?.periodDays),
+          });
         } catch (caught) {
           const message =
             caught instanceof Error ? caught.message : "Could not read the reconciliation file.";
@@ -217,9 +244,40 @@ export default function ReconciliationPage() {
   }
 
   function assignClient(itemId: string, clientId: string) {
-    setItems((current) =>
-      current.map((item) => (item.id === itemId ? { ...item, clientId } : item))
-    );
+    if (exportLock.current || periodSaveLock.current) return;
+    const client = clients.find((candidate) => candidate.id === clientId);
+    setItems((current) => current.map((item) => item.id === itemId ? {
+      ...item, clientId,
+      ...initialClientPeriod(client?.periodDays),
+    } : item));
+  }
+
+  function changePeriod(field: "periodStart" | "periodEnd", value: string) {
+    if (!activeItem || exportLock.current || periodSaveLock.current) return;
+    setItems((current) => current.map((item) => item.id === activeItem.id ? {
+      ...item, [field]: value,
+      ...(field === "periodEnd" && selectedClient?.periodDays
+        ? { periodStart: periodStartDate(value, selectedClient.periodDays) } : {}),
+    } : item));
+  }
+
+  async function saveClientPeriod() {
+    if (!canSavePeriod || !selectedClient || !activeItem || activePeriodDays === null || periodSaveLock.current || exportLock.current) return;
+    periodSaveLock.current = true;
+    setSavingPeriod(true);
+    try {
+      const updated = await saveReconciliationClientPeriod(selectedClient.id, activePeriodDays);
+      setClients((current) => current.map((client) => client.id === updated.id ? updated : client));
+      setItems((current) => current.map((item) => item.id === activeItem.id && item.clientId === updated.id
+        ? { ...item, savedPeriodStart: activeItem.periodStart, savedPeriodEnd: activeItem.periodEnd }
+        : item));
+      toast.success(t("Saved a time range of {{count}} days for {{client}}.", { count: activePeriodDays, client: updated.name }));
+    } catch {
+      toast.error(t("Could not save the time range for this client. Please try again."));
+    } finally {
+      periodSaveLock.current = false;
+      setSavingPeriod(false);
+    }
   }
 
   function removeItem(itemId: string) {
@@ -235,12 +293,16 @@ export default function ReconciliationPage() {
   }
 
   async function exportSoas(format: "excel" | "pdf") {
-    if (!items.length || exportLock.current) return;
+    if (!items.length || exportLock.current || periodSaveLock.current) return;
     if (incompleteCount) {
       toast.error(t("Please select a client for every reconciliation file before exporting."));
       return;
     }
 
+    if (invalidPeriodCount) {
+      toast.error(t("Choose a valid start and end date for every file."));
+      return;
+    }
     exportLock.current = true;
     setExporting(true);
     try {
@@ -252,7 +314,13 @@ export default function ReconciliationPage() {
       for (const item of items) {
         const client = clients.find((candidate) => candidate.id === item.clientId);
         if (!client) throw new Error(`No client selected for ${item.data.sourceFileName}.`);
-        const workbook = await createStatementOfAccount(templateBuffer.slice(0), item.data, client);
+        const statementData = {
+          ...item.data,
+          periodStart: item.periodStart,
+          periodEnd: item.periodEnd,
+          monthLabel: `${item.periodStart.slice(5, 7)}-${item.periodStart.slice(0, 4)}`,
+        };
+        const workbook = await createStatementOfAccount(templateBuffer.slice(0), statementData, client);
         const output = format === "pdf"
           ? await (await import("@/lib/features/reconciliation/statementPdf")).createStatementPdf(workbook)
           : workbook;
@@ -332,7 +400,7 @@ export default function ReconciliationPage() {
                 <DropdownMenuTrigger asChild>
                   <Button
                     className="cursor-pointer"
-                    disabled={exporting || reading || incompleteCount > 0}
+                    disabled={exporting || reading || savingPeriod || incompleteCount > 0 || invalidPeriodCount > 0}
                   >
                     {exporting ? <Loader2 className="animate-spin" /> : <Download />}
                     {exporting
@@ -398,18 +466,6 @@ export default function ReconciliationPage() {
         </div>
       ) : (
         <>
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-              <div className="min-w-0">
-                <p className="font-semibold">Reconciliation files loaded successfully</p>
-                <p className="mt-1 text-sm opacity-90">
-                  {t("{{count}} files · {{assigned}}/{{count}} recipients assigned", { count: items.length, assigned: items.length - incompleteCount })}
-                </p>
-              </div>
-            </div>
-          </div>
-
           <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <div className="border-b px-5 py-4">
               <h2 className="font-semibold text-foreground">
@@ -471,16 +527,6 @@ export default function ReconciliationPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard label="Transactions" value={data.rows.length.toLocaleString("en-US")} />
-            <SummaryCard label="Total combo price" value={formatVnd(data.totals.comboPrice)} />
-            <SummaryCard
-              label={`${t("Service fee")}${data.serviceFeeRate === null ? "" : ` (${data.serviceFeeRate}%)`}`}
-              value={formatVnd(data.totals.serviceFee)}
-            />
-            <SummaryCard label="Reconciliation amount" value={formatVnd(data.totals.reconciliationAmount)} />
-          </div>
-
           <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -493,78 +539,80 @@ export default function ReconciliationPage() {
                 </p>
               </div>
 
-              <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
-                <Popover open={clientPickerOpen} onOpenChange={setClientPickerOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={clientPickerOpen}
-                      className="w-full cursor-pointer justify-between font-normal sm:min-w-[280px] lg:w-[320px]"
-                      disabled={clientsLoading || !clients.length}
+              <div className="w-full space-y-2 lg:w-auto">
+                <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+                  <Popover open={clientPickerOpen} onOpenChange={setClientPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={clientPickerOpen}
+                        className="w-full cursor-pointer justify-between font-normal sm:min-w-[280px] lg:w-[320px]"
+                        disabled={clientsLoading || !clients.length || exporting || savingPeriod}
+                      >
+                        <span className="truncate">
+                          {selectedClient?.name ??
+                            (clientsLoading ? "Loading clients..." : "Select a client to export")}
+                        </span>
+                        <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="end"
+                      className="w-[var(--radix-popover-trigger-width)] p-0"
                     >
-                      <span className="truncate">
-                        {selectedClient?.name ??
-                          (clientsLoading ? "Loading clients..." : "Select a client to export")}
-                      </span>
-                      <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    align="end"
-                    className="w-[var(--radix-popover-trigger-width)] p-0"
+                      <Command>
+                        <CommandInput placeholder="Search clients..." />
+                        <CommandList>
+                          <CommandEmpty>No clients found.</CommandEmpty>
+                          <CommandGroup>
+                            {clients.map((client) => (
+                              <CommandItem
+                                key={client.id}
+                                value={[
+                                  client.id,
+                                  client.name,
+                                  client.taxCode,
+                                  client.address,
+                                  client.tel,
+                                  client.email,
+                                  client.beneficiaryName,
+                                  client.account,
+                                  client.bankName,
+                                ].join(" ")}
+                                onSelect={() => {
+                                  if (activeItem) assignClient(activeItem.id, client.id);
+                                  setClientPickerOpen(false);
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <Check
+                                  className={selectedClientId === client.id ? "opacity-100" : "opacity-0"}
+                                />
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium">{client.name}</p>
+                                  {client.taxCode ? (
+                                    <p className="truncate text-xs text-muted-foreground">
+                                      {client.taxCode}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    className="shrink-0 cursor-pointer"
+                    onClick={() => openClientDialog("create")}
                   >
-                    <Command>
-                      <CommandInput placeholder="Search clients..." />
-                      <CommandList>
-                        <CommandEmpty>No clients found.</CommandEmpty>
-                        <CommandGroup>
-                          {clients.map((client) => (
-                            <CommandItem
-                              key={client.id}
-                              value={[
-                                client.id,
-                                client.name,
-                                client.taxCode,
-                                client.address,
-                                client.tel,
-                                client.email,
-                                client.beneficiaryName,
-                                client.account,
-                                client.bankName,
-                              ].join(" ")}
-                              onSelect={() => {
-                                if (activeItem) assignClient(activeItem.id, client.id);
-                                setClientPickerOpen(false);
-                              }}
-                              className="cursor-pointer"
-                            >
-                              <Check
-                                className={selectedClientId === client.id ? "opacity-100" : "opacity-0"}
-                              />
-                              <div className="min-w-0">
-                                <p className="truncate font-medium">{client.name}</p>
-                                {client.taxCode ? (
-                                  <p className="truncate text-xs text-muted-foreground">
-                                    {client.taxCode}
-                                  </p>
-                                ) : null}
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-                <Button
-                  className="shrink-0 cursor-pointer"
-                  onClick={() => openClientDialog("create")}
-                >
-                  <Plus className="h-4 w-4" />
-                  Add client
-                </Button>
+                    <Plus className="h-4 w-4" />
+                    Add client
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -620,6 +668,62 @@ export default function ReconciliationPage() {
                   : "No clients yet. Click Add client to create the first profile."}
               </div>
             )}
+
+            {selectedClient ? (
+              <div className="mt-5 space-y-4 border-t pt-5">
+                <div className="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_auto]">
+                  <div className="flex min-w-0 flex-col gap-3">
+                    <label htmlFor="soa-period-start" className="text-sm font-medium">{t("Reconciliation start date")}</label>
+                    <DatePickerDMY
+                      id="soa-period-start"
+                      value={activeItem?.periodStart || undefined}
+                      onChange={(value) => changePeriod("periodStart", value ?? "")}
+                      placeholder={t("Select from date")}
+                      aria-label={t("Reconciliation start date")}
+                      disabled={exporting || savingPeriod}
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-3">
+                    <label htmlFor="soa-period-end" className="text-sm font-medium">{t("Reconciliation end date")}</label>
+                    <DatePickerDMY
+                      id="soa-period-end"
+                      value={activeItem?.periodEnd || undefined}
+                      onChange={(value) => changePeriod("periodEnd", value ?? "")}
+                      placeholder={t("Select to date")}
+                      aria-label={t("Reconciliation end date")}
+                      disabled={exporting || savingPeriod}
+                    />
+                  </div>
+                  <Button variant="outline" className="w-full sm:col-span-2 xl:col-span-1" onClick={() => void saveClientPeriod()}
+                    disabled={!canSavePeriod || exporting || savingPeriod}>
+                    {savingPeriod ? <Loader2 className="animate-spin" /> : null}
+                    {t(savingPeriod ? "Saving time range..." : "Save time range for this client")}
+                  </Button>
+                </div>
+                {activePeriodDays === null ? (
+                  activeItem?.periodStart && activeItem?.periodEnd ? (
+                    <p role="alert" className="text-xs text-destructive">{t("Choose a valid start and end date for every file.")}</p>
+                  ) : null
+                ) : (
+                  <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 text-xs text-muted-foreground">
+                    <span>{t("{{count}} days, including both start and end dates.", { count: activePeriodDays })}</span>
+                    {selectedClient.periodDays ? (
+                      <span className="ml-auto text-right">{t("Saved time range for this client: {{count}} days", { count: selectedClient.periodDays })}</span>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard label="Transactions" value={data.rows.length.toLocaleString("en-US")} />
+            <SummaryCard label="Total combo price" value={formatVnd(data.totals.comboPrice)} />
+            <SummaryCard
+              label={`${t("Service fee")}${data.serviceFeeRate === null ? "" : ` (${data.serviceFeeRate}%)`}`}
+              value={formatVnd(data.totals.serviceFee)}
+            />
+            <SummaryCard label="Reconciliation amount" value={formatVnd(data.totals.reconciliationAmount)} />
           </div>
 
           <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -627,7 +731,7 @@ export default function ReconciliationPage() {
               <div>
                 <h2 className="font-semibold text-foreground">Data to be added to the SOA</h2>
                 <p className="text-sm text-muted-foreground">
-                  {t("Period")}: {data.monthLabel}
+                  {t("Period")}: {activeItem?.periodStart || "—"} – {activeItem?.periodEnd || "—"}
                   {data.statementId ? ` · ${t("Bill ID")}: ${data.statementId}` : ""}
                   {data.merchantName ? ` · ${data.merchantName}` : ""}
                 </p>

@@ -14,15 +14,21 @@ type Props = {
   onChange: (iso?: string) => void;
   placeholder?: string;
   className?: string;
+  id?: string;
+  disabled?: boolean;
+  "aria-label"?: string;
 };
 
-export function DatePickerDMY({ value, onChange, placeholder = "Select a date", className }: Props) {
+export function DatePickerDMY({ value, onChange, placeholder = "Select a date", className, id, disabled, "aria-label": ariaLabel }: Props) {
   const selected = value ? new Date(value + "T00:00:00") : undefined;
 
   return (
     <Popover>
       <PopoverTrigger asChild>
         <Button
+          id={id}
+          disabled={disabled}
+          aria-label={ariaLabel}
           variant="outline"
           className={cn("w-full cursor-pointer justify-start text-left font-normal", !value && "text-muted-foreground", className)}
         >
@@ -34,6 +40,8 @@ export function DatePickerDMY({ value, onChange, placeholder = "Select a date", 
       <PopoverContent className="w-auto p-0" align="start">
         <Calendar
           mode="single"
+          disabled={disabled}
+          defaultMonth={selected}
           selected={selected}
           onSelect={(d) => {
             if (!d) return onChange(undefined);

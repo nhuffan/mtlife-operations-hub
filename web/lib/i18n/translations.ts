@@ -6,6 +6,20 @@ export const DEFAULT_LOCALE: Locale = "en";
 export const LOCALE_STORAGE_KEY = "operations-hub-locale";
 
 export const VI_TRANSLATIONS: Record<string, string> = {
+  "Choose the dates shown on the SOA. Save the period length to reuse it for this client.": "Chọn khoảng ngày hiển thị trên SOA. Lưu độ dài kỳ để dùng lại cho client này.",
+  "Saved time range for this client: {{count}} days": "Mốc thời gian đã lưu cho client này: {{count}} ngày",
+  "SOA date range": "Khoảng ngày SOA",
+  "Choose the dates printed on this SOA. All imported transactions are retained.": "Chọn khoảng ngày hiển thị trên SOA này. Giữ nguyên toàn bộ giao dịch đã nhập.",
+  "Reconciliation start date": "Ngày bắt đầu đối soát",
+  "Reconciliation end date": "Ngày kết thúc đối soát",
+  "Saving time range...": "Đang lưu mốc thời gian...",
+  "Save time range for this client": "Lưu mốc thời gian cho client này",
+  "Choose a valid start and end date for every file.": "Vui lòng chọn ngày bắt đầu và kết thúc hợp lệ cho từng file.",
+  "{{count}} days, including both start and end dates.": "{{count}} ngày, tính cả ngày bắt đầu và kết thúc.",
+  "Saved default: {{count}} days. Selecting this client or changing the start date calculates the end date automatically.": "Kỳ đã lưu: {{count}} ngày. Chọn client này hoặc đổi ngày bắt đầu sẽ tự tính ngày kết thúc.",
+  "Save the period length to reuse it when selecting this client in future imports.": "Lưu độ dài kỳ để dùng lại khi chọn client này trong những lần import sau.",
+  "Saved a time range of {{count}} days for {{client}}.": "Đã lưu mốc thời gian {{count}} ngày cho client {{client}}.",
+  "Could not save the time range for this client. Please try again.": "Chưa lưu được mốc thời gian cho client này. Vui lòng thử lại.",
   "Reconciled files": "File đã đối soát",
   "View client details and manage their documents.": "Xem thông tin client và quản lý tài liệu.",
   "Select a client to view or upload documents.": "Chọn client để xem hoặc tải tài liệu lên.",
