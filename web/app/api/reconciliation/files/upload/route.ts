@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const file = form.get("files");
     const clientId = form.get("clientId");
-    if (!(file instanceof File) || form.getAll("files").length !== 1 || !/\.(pdf|xlsx)$/i.test(file.name) || !file.size || file.size > 5 * 1024 * 1024 || typeof clientId !== "string") {
+    if (!(file instanceof File) || form.getAll("files").length !== 1 || !/\.(pdf|xlsx)$/i.test(file.name) || !file.size || file.size > 10 * 1024 * 1024 || typeof clientId !== "string") {
       return NextResponse.json({ error: "Invalid file" }, { status: 400 });
     }
     const { data: client, error: clientError } = await supabase.from("reconciliation_clients").select("id").eq("id", clientId).maybeSingle();

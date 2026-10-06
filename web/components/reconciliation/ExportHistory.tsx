@@ -74,8 +74,8 @@ export default function ExportHistory({ open, onOpenChange, clients, onClientsCh
     if (!selectedClient || uploadLock.current || deletingFile || saving) return;
     const accepted: PendingClientFile[] = [];
     for (const file of files) {
-      if (!/\.(pdf|xlsx)$/i.test(file.name) || !file.size || file.size > 5 * 1024 * 1024) {
-        toast.error(t("{{name}}: choose a PDF or XLSX file up to 5 MB.", { name: file.name }));
+      if (!/\.(pdf|xlsx)$/i.test(file.name) || !file.size || file.size > 10 * 1024 * 1024) {
+        toast.error(t("{{name}}: choose a PDF or XLSX file up to 10 MB.", { name: file.name }));
         continue;
       }
       if ([...pendingFiles, ...accepted].some((item) => item.client_id === selectedClient.id && item.file_name === file.name && item.file_size === file.size)) continue;
@@ -330,7 +330,7 @@ export default function ExportHistory({ open, onOpenChange, clients, onClientsCh
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
               <div>
                 <h3 className="text-sm font-semibold">{t("Reconciled files")}{!loading && !failed ? ` (${count})` : ""}</h3>
-                <p className="mt-1 text-xs text-muted-foreground">{t("PDF or XLSX · Up to 5 MB per file")}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("PDF or XLSX · Up to 10 MB per file")}</p>
               </div>
               {selectedClient && <Button type="button" size="sm" variant="outline"
                 disabled={uploading || deletingFile || saving || loading || loadingMore || downloading !== null}

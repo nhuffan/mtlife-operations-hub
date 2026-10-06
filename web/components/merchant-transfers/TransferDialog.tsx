@@ -5,7 +5,6 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
-  ChevronDown,
   ClipboardList,
   Clock3,
   Loader2,
@@ -47,9 +46,6 @@ import type {
 import { TransferFormField, TransferFormSection } from "./TransferFormUI";
 
 const fieldClass = "!h-10 h-10";
-
-const selectClass =
-  "!h-10 h-10 w-full cursor-pointer appearance-none rounded-md border border-input bg-transparent px-3 py-2 pr-10 text-sm font-normal shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
@@ -494,26 +490,29 @@ export default function TransferDialog({
               </TransferFormField>
 
               <TransferFormField id="transfer-bank" label="Bank" optional>
-                <div className="relative">
-                  <select
+                <Select
+                  value={bankName || "__none__"}
+                  onValueChange={(value) => setBankName(value === "__none__" ? "" : value)}
+                >
+                  <SelectTrigger
                     id="transfer-bank"
-                    value={bankName}
-                    onChange={(event) => setBankName(event.target.value)}
-                    className={selectClass}
+                    className="h-10 w-full data-[size=default]:h-10"
                   >
-                    <option value="">No bank selected</option>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t("No bank selected")}</SelectItem>
                     {bankName && bankName !== "__other__" && !banks.includes(bankName) ? (
-                      <option value={bankName}>{bankName}</option>
+                      <SelectItem value={bankName}>{bankName}</SelectItem>
                     ) : null}
                     {banks.map((bank) => (
-                      <option key={bank} value={bank}>
+                      <SelectItem key={bank} value={bank}>
                         {bank}
-                      </option>
+                      </SelectItem>
                     ))}
-                    <option value="__other__">Other bank...</option>
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-70" />
-                </div>
+                    <SelectItem value="__other__">{t("Other bank...")}</SelectItem>
+                  </SelectContent>
+                </Select>
                 {bankName === "__other__" && (
                   <Input
                     value={customBankName}

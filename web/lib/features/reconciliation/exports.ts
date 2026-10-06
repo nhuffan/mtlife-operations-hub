@@ -41,8 +41,8 @@ export async function listReconciliationExports(page: number, clientId: string |
 }
 
 export async function uploadClientFile(item: PendingClientFile) {
-  if (!item.client_id || !/\.(pdf|xlsx)$/i.test(item.file_name) || item.blob.size === 0 || item.blob.size > 5 * 1024 * 1024) {
-    throw new Error("Please choose a PDF or XLSX file up to 5 MB.");
+  if (!item.client_id || !/\.(pdf|xlsx)$/i.test(item.file_name) || item.blob.size === 0 || item.blob.size > 10 * 1024 * 1024) {
+    throw new Error("Please choose a PDF or XLSX file up to 10 MB.");
   }
   // Retain the uploaded asset across metadata retries to avoid duplicate uploads.
   if (!item.asset) {
