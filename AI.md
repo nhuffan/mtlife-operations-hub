@@ -1,6 +1,6 @@
 # AI Guide for BD Tracker
 
-This file is a compact operating guide for AI assistants and developers maintaining BD Tracker. For deeper database and feature rules, read the `Database and Feature Maintenance Guidelines` section in `README.md`.
+This file contains development and maintenance instructions for AI assistants and developers working on BD Tracker.
 
 ## Read First
 
